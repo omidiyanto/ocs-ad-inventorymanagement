@@ -103,7 +103,7 @@ func (c *Client) FetchComputerReport() ([]byte, error) {
 	fmt.Printf("[*] Menggunakan CSRF Token dari cookie: %s\n", csrfToken)
 
 	paramsData := map[string]interface{}{
-		"pageNavigateData": map[string]interface{}{"startIndex": 1, "toIndex": 100, "rangeList": []int{25, 50, 75, 100}, "range": 100, "totalCount": 0, "isNavigate": false},
+		"pageNavigateData": map[string]interface{}{"startIndex": 1, "toIndex": 999999, "rangeList": []int{25, 50, 75, 100}, "range": 999999, "totalCount": 0, "isNavigate": false},
 		"searchText":       map[string]interface{}{}, "searchCriteriaType": map[string]interface{}{}, "sortAttribId": -1,
 		"sortingOrder": true, "reportResultFilter": map[string]interface{}{}, "rvcFilter": map[string]interface{}{}, "viewOf": "default",
 		"dbFilterDetails": map[string]interface{}{"objectId": 3, "filters": []interface{}{}},

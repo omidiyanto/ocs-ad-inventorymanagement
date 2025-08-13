@@ -8,6 +8,7 @@ import (
 	"ocs-ad-inventorymanagement/client" // Ganti 'ocs-ad-inventorymanagement' sesuai nama modul Anda
 	"ocs-ad-inventorymanagement/parser" // Ganti 'ocs-ad-inventorymanagement' sesuai nama modul Anda
 	"os"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
@@ -66,14 +67,8 @@ func main() {
 		log.Fatalf("Proses transformasi data gagal: %v", err)
 	}
 
-	// 6. Cetak hasil akhir
-	finalJSON, err := json.MarshalIndent(cleanData, "", "    ")
-	if err != nil {
-		log.Fatalf("Gagal membuat JSON akhir: %v", err)
-	}
-
-	fmt.Println("\n--- HASIL DATA YANG SUDAH DIUBAH ---")
-	fmt.Println(string(finalJSON))
+	// 6. Log hasil akhir
+	log.Printf("[INFO] Data AD berhasil diparsing, jumlah: %d", len(cleanData))
 
 	// 7. Cek koneksi OCS MySQL dan tampilkan list komputer
 	ocsCfg := client.LoadOCSConfig()
@@ -91,14 +86,41 @@ func main() {
 	// List komputer OCS
 	ocsComputers, err := parser.ListOCSComputers(ocsClient.DB, 0)
 	if err != nil {
-		fmt.Println("Gagal mengambil data komputer OCS:", err)
+		log.Printf("[ERROR] Gagal mengambil data komputer OCS: %v", err)
 		return
 	}
-	ocsJSON, err := json.MarshalIndent(ocsComputers, "", "    ")
+	log.Printf("[INFO] Data OCS berhasil diambil, jumlah: %d", len(ocsComputers))
+
+	// Gabungkan data OCS dan AD
+	finalList := parser.CombineOCSAndAD(ocsComputers, cleanData)
+	log.Printf("[INFO] Data gabungan OCS+AD siap, jumlah: %d", len(finalList))
+
+	// Simpan ke Elasticsearch
+	esCfg := client.LoadElasticsearchConfig()
+	esClient, err := client.NewElasticsearchClient(esCfg)
 	if err != nil {
-		fmt.Println("Gagal membuat JSON komputer OCS:", err)
+		log.Printf("[ERROR] Gagal membuat client Elasticsearch: %v", err)
 		return
 	}
-	fmt.Println("\n--- LIST KOMPUTER OCS ---")
-	fmt.Println(string(ocsJSON))
+
+	// Indexing per row (bulk bisa dioptimasi nanti)
+	success, failed := 0, 0
+	for _, row := range finalList {
+		docID := row.ComputerName
+		body, _ := json.Marshal(row)
+		res, err := esClient.Client.Index(esCfg.Index, strings.NewReader(string(body)), esClient.Client.Index.WithDocumentID(docID))
+		if err != nil {
+			log.Printf("[ERROR] Indexing gagal untuk %s: %v", docID, err)
+			failed++
+			continue
+		}
+		if res.IsError() {
+			log.Printf("[ERROR] Elasticsearch response error untuk %s: %s", docID, res.String())
+			failed++
+		} else {
+			success++
+		}
+		res.Body.Close()
+	}
+	log.Printf("[INFO] Indexing selesai. Sukses: %d, Gagal: %d", success, failed)
 }
