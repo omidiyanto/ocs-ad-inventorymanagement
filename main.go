@@ -181,24 +181,61 @@ func main() {
 	}
 	log.Printf("[INFO] OCS x AD - Remove Deleted Data, Total: %d", deleted)
 
-	// --- Index/update data yang masih ada ---
-	success, failed := 0, 0
-	for _, row := range finalList {
-		docID := row.ComputerName
-		body, _ := json.Marshal(row)
-		res, err := esClient.Client.Index(esCfg.Index, strings.NewReader(string(body)), esClient.Client.Index.WithDocumentID(docID))
-		if err != nil {
-			log.Printf("[ERROR] Indexing gagal untuk %s: %v", docID, err)
-			failed++
-			continue
-		}
-		if res.IsError() {
-			log.Printf("[ERROR] Elasticsearch response error untuk %s: %s", docID, res.String())
-			failed++
-		} else {
-			success++
-		}
-		res.Body.Close()
+	// --- Index/update data yang masih ada, gunakan batch dan paralel (goroutine) ---
+	batchSize := 500
+	maxParallel := 4
+	type indexResult struct {
+		success int
+		failed  int
 	}
-	log.Printf("[INFO] Indexing Finished. Success: %d, Failed: %d", success, failed)
+	indexBatch := func(batch []parser.FinalComputerRow, ch chan<- indexResult) {
+		success, failed := 0, 0
+		for _, row := range batch {
+			docID := row.ComputerName
+			body, _ := json.Marshal(row)
+			res, err := esClient.Client.Index(esCfg.Index, strings.NewReader(string(body)), esClient.Client.Index.WithDocumentID(docID))
+			if err != nil {
+				log.Printf("[ERROR] Indexing gagal untuk %s: %v", docID, err)
+				failed++
+				continue
+			}
+			if res.IsError() {
+				log.Printf("[ERROR] Elasticsearch response error untuk %s: %s", docID, res.String())
+				failed++
+			} else {
+				success++
+			}
+			res.Body.Close()
+		}
+		ch <- indexResult{success, failed}
+	}
+
+	var batches [][]parser.FinalComputerRow
+	for i := 0; i < len(finalList); i += batchSize {
+		end := i + batchSize
+		if end > len(finalList) {
+			end = len(finalList)
+		}
+		batches = append(batches, finalList[i:end])
+	}
+
+	ch := make(chan indexResult, len(batches))
+	sem := make(chan struct{}, maxParallel)
+
+	for _, batch := range batches {
+		sem <- struct{}{} // acquire
+		go func(b []parser.FinalComputerRow) {
+			defer func() { <-sem }() // release
+			indexBatch(b, ch)
+		}(batch)
+	}
+
+	// Tunggu semua batch selesai
+	success, failed := 0, 0
+	for i := 0; i < len(batches); i++ {
+		res := <-ch
+		success += res.success
+		failed += res.failed
+	}
+	log.Printf("[INFO] Indexing Finished (Batch Parallel). Success: %d, Failed: %d", success, failed)
 }
