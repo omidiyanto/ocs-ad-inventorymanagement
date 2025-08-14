@@ -4,3 +4,9 @@ services:
     container_name: ocs-ad-inventory
     env_file:
       - .env
+    networks:
+      - ocs-itop-ad_network
+
+networks:
+    ocs-itop-ad_network:
+      external: true
