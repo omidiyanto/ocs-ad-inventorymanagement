@@ -8,17 +8,19 @@ import (
 )
 
 type FinalComputerRow struct {
-	ComputerName          string `json:"computer_name"`
-	ExistsInOCS           bool   `json:"exists_in_ocs"`
-	ExistsInAD            bool   `json:"exists_in_ad"`
-	OCSStatus             string `json:"ocs_status"`
-	ADStatus              string `json:"ad_status"`
-	OCSLastInventory      string `json:"ocs_last_inventory,omitempty"`
-	OCSLastCome           string `json:"ocs_last_come,omitempty"`
-	ADLastLogonTime       string `json:"ad_last_logon_time,omitempty"`
-	ADNotLoginMoreThan30d bool   `json:"ad_not_login_more_than_30d"`
-	ADNotLoginMoreThan45d bool   `json:"ad_not_login_more_than_45d"`
-	SyncTime              string `json:"@timestamp"`
+	ComputerName                string `json:"computer_name"`
+	ExistsInOCS                 bool   `json:"exists_in_ocs"`
+	ExistsInAD                  bool   `json:"exists_in_ad"`
+	OCSStatus                   string `json:"ocs_status"`
+	ADStatus                    string `json:"ad_status"`
+	OCSLastInventory            string `json:"ocs_last_inventory,omitempty"`
+	OCSLastCome                 string `json:"ocs_last_come,omitempty"`
+	ADLastLogonTime             string `json:"ad_last_logon_time,omitempty"`
+	ADNotLoginMoreThan30d       bool   `json:"ad_not_login_more_than_30d"`
+	ADNotLoginMoreThan45d       bool   `json:"ad_not_login_more_than_45d"`
+	OCSLastInventoryMoreThan30d bool   `json:"ocs_last_inventory_more_than_30d"`
+	OCSLastComeMoreThan30d      bool   `json:"ocs_last_come_more_than_30d"`
+	SyncTime                    string `json:"@timestamp"`
 }
 
 // HashComputerName membuat hash dari nama komputer untuk deduplikasi.
@@ -49,26 +51,61 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 		return time.Time{}, false
 	}
 
-	// Helper baru untuk mengisi @timestamp (SyncTime).
+	// Helper baru untuk mengisi @timestamp (SyncTime) dengan zona waktu UTC-7.
 	// Fungsi ini memilih timestamp prioritas (OCS > AD), memformatnya ke RFC3339,
 	// dan memberikan nilai default jika keduanya tidak valid.
 	getSyncTimestamp := func(ocsLastInventory, adLastLogon string) string {
+		shift := -7 * time.Hour
+		isZeroOrDash := func(s string) bool {
+			return s == "0" || s == "-"
+		}
 		// Prioritas 1: Coba parse OCSLastInventory
-		if t, ok := parseTime(ocsLastInventory); ok {
-			return t.UTC().Format(time.RFC3339)
+		if !isZeroOrDash(ocsLastInventory) {
+			if t, ok := parseTime(ocsLastInventory); ok {
+				return t.Add(shift).UTC().Format(time.RFC3339)
+			}
 		}
 		// Prioritas 2: Coba parse ADLastLogon
-		if t, ok := parseTime(adLastLogon); ok {
-			return t.UTC().Format(time.RFC3339)
+		if !isZeroOrDash(adLastLogon) {
+			if t, ok := parseTime(adLastLogon); ok {
+				return t.Add(shift).UTC().Format(time.RFC3339)
+			}
 		}
-		// Fallback: Jika keduanya tidak ada atau tidak valid, gunakan waktu sekarang
+		// Jika field bernilai 0 atau -, gunakan waktu UTC+0 (tanpa shift)
 		return time.Now().UTC().Format(time.RFC3339)
 	}
+
+	// Helper untuk pengecekan string "0" atau "-" dan waktu sekarang
+	isZeroOrDash := func(s string) bool {
+		return s == "0" || s == "-"
+	}
+	now := time.Now().UTC()
 
 	// Proses data dari OCS
 	for _, ocs := range ocsList {
 		key := HashComputerName(ocs.ComputerName)
 		cache[key] = ocs.ComputerName
+
+		// Logic untuk ocs_last_inventory_more_than_30d dan ocs_last_come_more_than_30d
+		ocsLastInventoryMoreThan30d := false
+		ocsLastComeMoreThan30d := false
+		if isZeroOrDash(ocs.OCSLastInventory) {
+			ocsLastInventoryMoreThan30d = true
+		} else if t, ok := parseTime(ocs.OCSLastInventory); ok {
+			diff := now.Sub(t)
+			if diff.Hours() > 24*30 {
+				ocsLastInventoryMoreThan30d = true
+			}
+		}
+		if isZeroOrDash(ocs.OCSLastCome) {
+			ocsLastComeMoreThan30d = true
+		} else if t, ok := parseTime(ocs.OCSLastCome); ok {
+			diff := now.Sub(t)
+			if diff.Hours() > 24*30 {
+				ocsLastComeMoreThan30d = true
+			}
+		}
+
 		result[ocs.ComputerName] = &FinalComputerRow{
 			ComputerName: ocs.ComputerName,
 			ExistsInOCS:  true,
@@ -76,24 +113,30 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 			OCSStatus:    ocs.OCSStatus,
 			ADStatus:     "",
 			// Aturan 2: Biarkan format string original
-			OCSLastInventory:      ocs.OCSLastInventory,
-			OCSLastCome:           ocs.OCSLastCome,
-			ADLastLogonTime:       "",
-			ADNotLoginMoreThan30d: false,
-			ADNotLoginMoreThan45d: false,
+			OCSLastInventory:            ocs.OCSLastInventory,
+			OCSLastCome:                 ocs.OCSLastCome,
+			ADLastLogonTime:             "",
+			ADNotLoginMoreThan30d:       false,
+			ADNotLoginMoreThan45d:       false,
+			OCSLastInventoryMoreThan30d: ocsLastInventoryMoreThan30d,
+			OCSLastComeMoreThan30d:      ocsLastComeMoreThan30d,
 			// Aturan 1 & 3: Buat @timestamp dalam format RFC3339 dari data OCS
 			SyncTime: getSyncTimestamp(ocs.OCSLastInventory, ""),
 		}
 	}
 
 	// Proses data dari AD dan gabungkan dengan data OCS yang ada
-	now := time.Now().UTC()
+	// now dan isZeroOrDash sudah didefinisikan di atas
 	for _, ad := range adList {
 		key := HashComputerName(ad.ComputerName)
 
 		// Hitung field login > 30/45 hari
 		moreThan30d, moreThan45d := false, false
-		if t, ok := parseTime(ad.LastLogonTime); ok {
+		if isZeroOrDash(ad.LastLogonTime) {
+			// Anggap tidak pernah login, maka pasti lebih dari 30 dan 45 hari
+			moreThan30d = true
+			moreThan45d = true
+		} else if t, ok := parseTime(ad.LastLogonTime); ok {
 			diff := now.Sub(t)
 			if diff.Hours() > 24*30 {
 				moreThan30d = true
@@ -116,6 +159,8 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 			row.SyncTime = getSyncTimestamp(row.OCSLastInventory, ad.LastLogonTime)
 		} else {
 			// Komputer hanya ada di AD
+			ocsLastInventoryMoreThan30d := true
+			ocsLastComeMoreThan30d := true
 			result[ad.ComputerName] = &FinalComputerRow{
 				ComputerName:     ad.ComputerName,
 				ExistsInOCS:      false,
@@ -125,9 +170,11 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 				OCSLastInventory: "",
 				OCSLastCome:      "",
 				// Aturan 2: Biarkan format string original
-				ADLastLogonTime:       ad.LastLogonTime,
-				ADNotLoginMoreThan30d: moreThan30d,
-				ADNotLoginMoreThan45d: moreThan45d,
+				ADLastLogonTime:             ad.LastLogonTime,
+				ADNotLoginMoreThan30d:       moreThan30d,
+				ADNotLoginMoreThan45d:       moreThan45d,
+				OCSLastInventoryMoreThan30d: ocsLastInventoryMoreThan30d,
+				OCSLastComeMoreThan30d:      ocsLastComeMoreThan30d,
 				// Aturan 1 & 3: Buat @timestamp dalam format RFC3339 dari data AD
 				SyncTime: getSyncTimestamp("", ad.LastLogonTime),
 			}
