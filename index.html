@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Delete Computer — OCS Inventory (Enhanced)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root{--ocs-purple:#93318e;--bg:#eef2f6}
+    body{background:linear-gradient(180deg,#f6f3f7 0%, #eef2f6 100%);font-family:Inter,ui-sans-serif,system-ui,-apple-system,\"Segoe UI\",Roboto,\"Helvetica Neue\",Arial}
+    .glass{backdrop-filter:blur(6px);background:linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.62));}
+    .brand-circle{background:var(--ocs-purple)}
+    .accent{color:var(--ocs-purple)}
+    .btn-ocs{background:var(--ocs-purple);color:#fff}
+    .btn-ocs:hover{background:#7a2676}
+    .input-ocs{border:1px solid rgba(147,49,142,0.18)}
+    .kbd{background:#111827;color:#fff;padding:0.08rem 0.4rem;border-radius:6px;font-size:0.75rem}
+    /* small animations */
+    @keyframes floaty{0%{transform:translateY(0)}50%{transform:translateY(-6px)}100%{transform:translateY(0)}}
+    .floaty{animation:floaty 3s ease-in-out infinite}
+    /* toast */
+    .toast-enter{transform:translateY(16px);opacity:0}
+    .toast-show{transform:translateY(0);opacity:1;transition:all .32s ease}
+    /* confetti canvas overlay */
+    #confetti{position:fixed;left:0;top:0;pointer-events:none;width:100%;height:100%;z-index:60}
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-6">
+  <canvas id="confetti"></canvas>
+  <div class="w-full max-w-3xl">
+    <div class="glass rounded-2xl p-6 shadow-xl border border-gray-200">
+      <div class="flex items-center gap-4">
+        <div class="brand-circle w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-lg">OCS</div>
+        <div>
+          <div class="text-2xl font-extrabold">Delete Computer</div>
+          <div class="text-sm text-gray-600">Aman & terkendali — konfirmasi berlapis sebelum penghapusan permanen.</div>
+        </div>
+        <div class="ml-auto text-sm text-gray-500">Tip: tekan <span class="kbd">Esc</span> untuk menutup modal.</div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+        <!-- Left: Login -->
+        <section class="p-4 bg-white rounded-lg shadow-sm">
+          <h3 class="font-semibold text-lg accent">Admin Sign-in</h3>
+          <p class="text-sm text-gray-500 mt-1">Masuk dengan akun admin untuk melanjutkan.</p>
+
+          <form id="loginForm" class="mt-4 space-y-3">
+            <label class="block text-sm">
+              <span class="text-gray-700">Username</span>
+              <input id="username" class="mt-1 w-full px-3 py-2 rounded-md input-ocs" type="text" placeholder="admin" required autofocus />
+            </label>
+
+            <label class="block text-sm relative">
+              <span class="text-gray-700">Password</span>
+              <div class="mt-1 relative">
+                <input id="password" class="w-full px-3 py-2 rounded-md input-ocs pr-12" type="password" placeholder="••••••••" required />
+                <button type="button" id="togglePwd" class="absolute right-2 top-2 text-sm text-gray-600">Show</button>
+              </div>
+              <div id="pwdStrength" class="text-xs mt-1 text-gray-500">Kekuatan: <span id="pwdLabel">—</span></div>
+            </label>
+
+            <div class="flex items-center gap-2">
+              <button id="loginBtn" class="btn-ocs px-4 py-2 rounded-md font-semibold" type="submit">Sign in</button>
+              <div id="loginSpinner" class="hidden">Memeriksa…</div>
+              <div id="loginError" class="text-sm text-red-600 hidden"></div>
+            </div>
+
+            <div class="text-xs text-gray-400">Jika menggunakan API token, masukkan username sebagai token-user dan password sebagai token.</div>
+          </form>
+        </section>
+
+        <!-- Right: Delete preview -->
+        <aside class="p-4 bg-white rounded-lg shadow-sm flex flex-col gap-4">
+          <div>
+            <div class="text-sm text-gray-500">Computer to remove</div>
+            <div class="text-xl font-semibold mt-1" id="compNameDisplay">-</div>
+            <div class="text-sm text-gray-500">Query param: <span class="font-mono">?name=COMPUTER_NAME</span></div>
+          </div>
+
+          <div class="pt-2">
+            <h4 class="font-semibold">Validation</h4>
+            <div class="mt-2 grid grid-cols-1 gap-3">
+              <div class="flex items-center gap-2">
+                <label class="flex items-center gap-2 w-full">
+                  <input id="confirmCheck" type="checkbox" class="ocs-checkbox" />
+                  <div class="text-sm">Saya mengerti ini akan menghapus data dari OCS (termasuk inventory & metadata)</div>
+                </label>
+              </div>
+
+              <div>
+                <div class="flex items-center gap-2">
+                  <div class="text-sm">Selesaikan operasi ini dalam</div>
+                  <div class="ml-auto text-xs text-gray-400">Shortcut: tekan <span class="kbd">Enter</span> untuk Delete</div>
+                </div>
+                <div class="mt-2 flex gap-2">
+                  <input id="captchaA" class="input-ocs rounded px-3 py-2 w-40" placeholder="Jawaban" autocomplete="off" />
+                  <div class="ml-2 px-3 py-2 rounded-md bg-gray-50 border text-sm" id="captchaQ">12 + 7</div>
+                </div>
+                <div id="confirmError" class="text-sm text-red-600 hidden mt-2"></div>
+              </div>
+
+              <div class="flex gap-2 mt-2">
+                <button id="deleteBtn" class="btn-ocs px-4 py-2 rounded-md font-semibold disabled:opacity-60" disabled>Delete</button>
+                <button id="previewBtn" class="px-4 py-2 rounded-md border border-gray-200">View Computer</button>
+                <div id="deleteSpinner" class="hidden">Processing…</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-auto text-xs text-gray-400">Actions are logged. Jika butuh rollback, segera hubungi admin.
+          </div>
+        </aside>
+      </div>
+
+      <!-- Undo toast area -->
+      <div id="toastWrap" class="fixed right-6 bottom-6 z-50"></div>
+    </div>
+  </div>
+
+<script>
+/* ---------- small helpers ---------- */
+const $ = sel => document.querySelector(sel);
+const qs = sel => Array.from(document.querySelectorAll(sel));
+
+// Get query param 'name'
+function getQueryParam(name) {
+  try { return new URL(location.href).searchParams.get(name) || ''; } catch(e){return ''}
+}
+
+// --- UI elements ---
+const compName = getQueryParam('name') || '';
+$('#compNameDisplay').textContent = compName || '(no name provided)';
+
+// Captcha generation
+let captchaX = Math.floor(Math.random()*20 + 3);
+let captchaY = Math.floor(Math.random()*20 + 1);
+$('#captchaQ').textContent = `${captchaX} + ${captchaY}`;
+
+// Password show toggle & strength
+$('#togglePwd').addEventListener('click', () => {
+  const pwd = $('#password');
+  if (pwd.type === 'password') { pwd.type = 'text'; $('#togglePwd').textContent = 'Hide'; }
+  else { pwd.type = 'password'; $('#togglePwd').textContent = 'Show'; }
+});
+
+$('#password').addEventListener('input', e => {
+  const v = e.target.value;
+  const score = passwordScore(v);
+  const labels = ['Very weak','Weak','Okay','Good','Strong'];
+  $('#pwdLabel').textContent = v ? labels[Math.min(Math.max(Math.floor(score),0),4)] : '—';
+});
+
+function passwordScore(p){
+  if(!p) return 0;
+  let score = 0;
+  if (p.length > 7) score += 1;
+  if (/[A-Z]/.test(p)) score += 1;
+  if (/[0-9]/.test(p)) score += 1;
+  if (/[^A-Za-z0-9]/.test(p)) score += 1;
+  if (p.length > 12) score += 1;
+  return score;
+}
+
+/* ---------- Login ---------- */
+let jwtToken = '';
+$('#loginForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  $('#loginError').classList.add('hidden');
+  $('#loginBtn').disabled = true;
+  try {
+    const username = $('#username').value.trim();
+    const password = $('#password').value;
+    const res = await fetch('/auth-token', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({username,password})
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login gagal');
+    jwtToken = data.token;
+    enableDeleteUI(true);
+    toast('Signed in — you can now delete.', {type:'ok'});
+  } catch(err){
+    $('#loginError').textContent = err.message; $('#loginError').classList.remove('hidden');
+  } finally { $('#loginBtn').disabled = false; }
+});
+
+function enableDeleteUI(on){
+  $('#deleteBtn').disabled = !on; $('#previewBtn').disabled = !on;
+}
+
+/* ---------- Delete flow with undo ---------- */
+$('#deleteBtn').addEventListener('click', performDelete);
+$('#previewBtn').addEventListener('click', () => {
+  if (!compName) return toast('No computer name provided');
+  // open OCS viewer (example path)
+  window.open(`/ocsreports/index.php?function=visu_computers&name=${encodeURIComponent(compName)}`,'_blank');
+});
+
+async function performDelete(){
+  const ans = $('#captchaA').value.trim();
+  $('#confirmError').classList.add('hidden');
+  if (parseInt(ans) !== (captchaX + captchaY)){
+    $('#confirmError').textContent = 'Captcha salah!'; $('#confirmError').classList.remove('hidden'); return;
+  }
+  if (!$('#confirmCheck').checked){
+    $('#confirmError').textContent = 'Anda harus konfirmasi penghapusan.'; $('#confirmError').classList.remove('hidden'); return;
+  }
+  if (!jwtToken){ toast('Silakan login terlebih dahulu'); return; }
+  // Call delete endpoint — prefer DELETE but fall back to GET if server expects that.
+  $('#deleteBtn').disabled = true; $('#deleteBtn').textContent = 'Deleting…';
+  try {
+    const res = await fetch(`/delete-computer?name=${encodeURIComponent(compName)}`, {
+      method: 'DELETE', headers: { 'Authorization': 'Bearer ' + jwtToken }
+    });
+    // some servers don't accept DELETE — fallback
+    if (res.status === 405){
+      const res2 = await fetch(`/delete-computer?name=${encodeURIComponent(compName)}`, {method:'GET', headers:{'Authorization':'Bearer '+jwtToken}});
+      handleDeleteResponse(res2);
+    } else {
+      handleDeleteResponse(res);
+    }
+  } catch(err){
+    toast('Delete failed: '+err.message, {type:'err'});
+    $('#deleteBtn').disabled = false; $('#deleteBtn').textContent = 'Delete';
+  }
+}
+
+async function handleDeleteResponse(res){
+  const data = await (res.json().catch(()=>({message:'No json'})));
+  if (!res.ok) {
+    toast('Delete error: ' + (data.error || data.message || res.statusText), {type:'err'});
+    $('#deleteBtn').disabled = false; $('#deleteBtn').textContent = 'Delete';
+    return;
+  }
+  // success — show undo toast
+  $('#deleteBtn').textContent = 'Deleted';
+  showSuccess(confettiBurst);
+  const undoId = toast(`"${compName}" successfully removed.`, {actionText:'Undo', duration:10000, onAction:async()=>{
+    try{
+      const r = await fetch(`/undelete-computer?name=${encodeURIComponent(compName)}`, {method:'POST', headers:{'Authorization':'Bearer '+jwtToken}});
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error||d.message||r.statusText);
+      toast('Undo successful', {type:'ok'});
+    }catch(e){ toast('Undo failed: '+e.message,{type:'err'}); }
+  }});
+}
+
+/* ---------- Toast utility ---------- */
+function toast(msg, opts={}){
+  const wrap = document.createElement('div');
+  wrap.className = 'bg-white shadow-lg rounded-md px-4 py-3 mb-3 w-96 flex items-center gap-3 toast-show';
+  const text = document.createElement('div'); text.className='flex-1 text-sm'; text.textContent = msg;
+  wrap.appendChild(text);
+  if (opts.actionText){
+    const act = document.createElement('button'); act.textContent = opts.actionText; act.className='font-semibold underline text-sm';
+    act.addEventListener('click', ()=>{ opts.onAction && opts.onAction(); wrap.remove(); });
+    wrap.appendChild(act);
+  }
+  document.getElementById('toastWrap').appendChild(wrap);
+  if (opts.duration !== 0){ setTimeout(()=>{ try{ wrap.remove() }catch(e){} }, opts.duration || 4000); }
+  return wrap;
+}
+
+/* ---------- Success view + confetti ---------- */
+function showSuccess(cb){
+  // small modal like effect
+  const successDiv = document.createElement('div');
+  successDiv.className = 'fixed inset-0 z-50 flex items-center justify-center';
+  successDiv.innerHTML = `\n    <div class="bg-white rounded-2xl p-6 shadow-2xl w-96 text-center">\n      <div class="w-16 h-16 mx-auto rounded-full flex items-center justify-center brand-circle mb-3">\n        <svg width=28 height=28 viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width=2><path d=\"M5 13l4 4L19 7\"/></svg>\n      </div>\n      <div class=\"text-lg font-bold\">Deleted</div>\n      <div class=\"text-sm text-gray-500 mt-2\">Computer "${compName}" removed from OCS.</div>\n      <div class=\"mt-4\"><button id=\"okClose\" class=\"btn-ocs px-4 py-2 rounded-md\">OK</button></div>\n    </div>`;
+  document.body.appendChild(successDiv);
+  $('#okClose').addEventListener('click', ()=> successDiv.remove());
+  setTimeout(()=>{ successDiv.remove(); },8000);
+  cb && cb();
+}
+
+/* ---------- confetti (tiny) ---------- */
+function confettiBurst(){
+  const canvas = document.getElementById('confetti');
+  if (!canvas) return;
+  canvas.width = innerWidth; canvas.height = innerHeight; const ctx = canvas.getContext('2d');
+  const pieces = [];
+  for(let i=0;i<120;i++) pieces.push({x:innerWidth/2,y:innerHeight/3,vy:(Math.random()*6)+2,vx:(Math.random()*10)-5,rot:Math.random()*360, vr:(Math.random()*6)-3, col: ['#93318e','#ff7ab6','#ffd166','#6ee7b7'][Math.floor(Math.random()*4)], size:Math.random()*8+6});
+  let t=0;
+  function draw(){ ctx.clearRect(0,0,canvas.width,canvas.height); t+=1; for(const p of pieces){ p.x+=p.vx; p.y+=p.vy; p.vy+=0.18; p.rot+=p.vr; ctx.save(); ctx.translate(p.x,p.y); ctx.rotate(p.rot*Math.PI/180); ctx.fillStyle=p.col; ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size); ctx.restore(); }
+    if(t<200) requestAnimationFrame(draw); else ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
+  draw();
+}
+
+/* ---------- keyboard shortcuts ---------- */
+window.addEventListener('keydown', (e)=>{
+  if (e.key === 'Escape'){ window.close?.(); }
+  if (e.key === 'Enter' && document.activeElement.tagName !== 'TEXTAREA'){
+    // if focus is inside login, submit that; else try delete
+    if (document.activeElement.closest('#loginForm')) {
+      $('#loginForm').requestSubmit?.();
+    } else {
+      $('#deleteBtn').click();
+    }
+  }
+});
+
+/* ---------- Accessibility focus trap (minimal) ---------- */
+(function(){
+  const focusable = 'a,button,input,textarea,select';
+  const modalNodes = document.querySelectorAll('.glass');
+  if (modalNodes.length) {
+    modalNodes[0].addEventListener('keydown', (e)=>{
+      if (e.key === 'Tab'){
+        const nodes = Array.from(modalNodes[0].querySelectorAll(focusable)).filter(n => !n.disabled);
+        if (!nodes.length) return;
+        const idx = nodes.indexOf(document.activeElement);
+        if (e.shiftKey && idx === 0){ nodes[nodes.length-1].focus(); e.preventDefault(); }
+        else if (!e.shiftKey && idx === nodes.length-1){ nodes[0].focus(); e.preventDefault(); }
+      }
+    });
+  }
+})();
+
+</script>
+</body>
+</html>
