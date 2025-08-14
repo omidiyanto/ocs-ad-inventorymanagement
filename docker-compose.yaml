@@ -1,0 +1,6 @@
+services:
+  ocs-ad-inventory:
+    image: ocs-ad-inventory:latest
+    container_name: ocs-ad-inventory
+    env_file:
+      - .env
