@@ -3,9 +3,12 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
+	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
 
@@ -21,6 +24,37 @@ func DeleteComputerHandler(db *gorm.DB) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
+		// --- JWT Auth ---
+		authHeader := c.GetHeader("Authorization")
+		if !strings.HasPrefix(authHeader, "Bearer ") {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Authorization header (Bearer <token>) wajib"})
+			return
+		}
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		jwtSecret := os.Getenv("JWT_SECRET")
+		if jwtSecret == "" {
+			jwtSecret = "supersecretjwtkey"
+		}
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method")
+			}
+			return []byte(jwtSecret), nil
+		})
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token tidak valid"})
+			return
+		}
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token tidak valid"})
+			return
+		}
+		username, _ := claims["username"].(string)
+		if username == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token tidak valid (no username)"})
+			return
+		}
 		name := c.Query("name")
 		if name == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "parameter 'name' wajib diisi"})
@@ -111,7 +145,8 @@ func DeleteComputerHandler(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{
-			"message": fmt.Sprintf("Semua data yang terkait dengan computer ID %d telah berhasil dihapus.", hwID),
+			"message":    fmt.Sprintf("Semua data yang terkait dengan computer ID %d telah berhasil dihapus.", hwID),
+			"deleted_by": username,
 		})
 	}
 }

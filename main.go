@@ -86,6 +86,7 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
+	r.POST("/auth-token", api.AuthTokenHandler)
 	r.GET("/delete-computer", api.DeleteComputerHandler(ocsClient.DB))
 
 	go func() {
