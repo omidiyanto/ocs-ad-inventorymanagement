@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"ocs-ad-inventorymanagement/client" // Ganti 'ocs-ad-inventorymanagement' sesuai nama modul Anda
-	"ocs-ad-inventorymanagement/parser" // Ganti 'ocs-ad-inventorymanagement' sesuai nama modul Anda
 	"os"
 	"strings"
+	"time"
 
+	"ocs-ad-inventorymanagement/api"
+	"ocs-ad-inventorymanagement/client"
+	"ocs-ad-inventorymanagement/parser"
+
+	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
@@ -70,58 +74,62 @@ func main() {
 	// 6. Log hasil akhir
 	log.Printf("[SUCCESS] AD Manager Plus - Data successfully parsed, Total: %d", len(cleanData))
 
-	// 7. Cek koneksi OCS MySQL dan tampilkan list komputer
+	// Jalankan web API Gin untuk delete-computer secara async
 	ocsCfg := client.LoadOCSConfig()
 	ocsClient, err := client.NewOCSMySQLClient(ocsCfg)
 	if err != nil {
-		fmt.Println("[ERROR] OCS - Koneksi gagal:", err)
-		return
+		log.Fatalf("[ERROR] OCS - Koneksi gagal: %v", err)
 	}
 	if err := ocsClient.Ping(); err != nil {
-		fmt.Println("[ERROR] OCS - Autentikasi gagal:", err)
-		return
-	}
-	log.Println("[SUCCESS] OCS - Autentication Success!")
-
-	// List komputer OCS
-	ocsComputers, err := parser.ListOCSComputers(ocsClient.DB, 0)
-	if err != nil {
-		log.Printf("[ERROR] Gagal mengambil data komputer OCS: %v", err)
-		return
-	}
-	log.Printf("[SUCCESS] OCS - Data successfully parsed, Total: %d", len(ocsComputers))
-
-	// Gabungkan data OCS dan AD
-	finalList := parser.CombineOCSAndAD(ocsComputers, cleanData)
-	log.Printf("[SUCCESS] OCS x AD - Combined Data, Total: %d", len(finalList))
-
-	// Simpan ke Elasticsearch
-	esCfg := client.LoadElasticsearchConfig()
-	esClient, err := client.NewElasticsearchClient(esCfg)
-	if err != nil {
-		log.Printf("[ERROR] Gagal membuat client Elasticsearch: %v", err)
-		return
+		log.Fatalf("[ERROR] OCS - Autentikasi gagal: %v", err)
 	}
 
-	// --- Sinkronisasi dua arah: hapus data yang sudah tidak ada di OCS/AD ---
-	// 1. Build cache OCS dan AD (hashing)
-	cacheOCS := make(map[string]struct{})
-	cacheAD := make(map[string]struct{})
-	hashName := func(name string) string {
-		return parser.HashComputerName(name)
-	}
-	for _, ocs := range ocsComputers {
-		cacheOCS[hashName(ocs.ComputerName)] = struct{}{}
-	}
-	for _, ad := range cleanData {
-		cacheAD[hashName(ad.ComputerName)] = struct{}{}
-	}
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.GET("/delete-computer", api.DeleteComputerHandler(ocsClient.DB))
 
-	// 2. Ambil semua document ID dari Elasticsearch
-	// (gunakan search API, ambil hanya field _id)
-	var esIDs []string
-	{
-		// Ambil 10.000 data per request (bisa dioptimasi scroll/bulk jika data sangat besar)
+	go func() {
+		if err := r.Run("0.0.0.0:8080"); err != nil {
+			log.Fatalf("[ERROR] Gagal menjalankan web API: %v", err)
+		}
+	}()
+
+	// Scheduler: jalankan sinkronisasi setiap 90 detik
+	for {
+		// 1. List komputer OCS
+		ocsComputers, err := parser.ListOCSComputers(ocsClient.DB, 0)
+		if err != nil {
+			log.Printf("[ERROR] Gagal mengambil data komputer OCS: %v", err)
+			continue
+		}
+		log.Printf("[SUCCESS] OCS - Data successfully parsed, Total: %d", len(ocsComputers))
+
+		// 2. Gabungkan data OCS dan AD
+		finalList := parser.CombineOCSAndAD(ocsComputers, cleanData)
+		log.Printf("[SUCCESS] OCS x AD - Combined Data, Total: %d", len(finalList))
+
+		// 3. Simpan ke Elasticsearch
+		esCfg := client.LoadElasticsearchConfig()
+		esClient, err := client.NewElasticsearchClient(esCfg)
+		if err != nil {
+			log.Printf("[ERROR] Gagal membuat client Elasticsearch: %v", err)
+			continue
+		}
+
+		// --- Sinkronisasi dua arah: hapus data yang sudah tidak ada di OCS/AD ---
+		cacheOCS := make(map[string]struct{})
+		cacheAD := make(map[string]struct{})
+		hashName := func(name string) string {
+			return parser.HashComputerName(name)
+		}
+		for _, ocs := range ocsComputers {
+			cacheOCS[hashName(ocs.ComputerName)] = struct{}{}
+		}
+		for _, ad := range cleanData {
+			cacheAD[hashName(ad.ComputerName)] = struct{}{}
+		}
+
+		var esIDs []string
 		from := 0
 		size := 10000
 		for {
@@ -157,85 +165,85 @@ func main() {
 			}
 			from += size
 		}
-	}
 
-	// 3. Hapus document yang tidak ada di OCS dan tidak ada di AD
-	deleted := 0
-	for _, id := range esIDs {
-		h := hashName(id)
-		_, existsOCS := cacheOCS[h]
-		_, existsAD := cacheAD[h]
-		if !existsOCS && !existsAD {
-			res, err := esClient.Client.Delete(esCfg.Index, id)
-			if err != nil {
-				log.Printf("[ERROR] Gagal hapus document %s di Elasticsearch: %v", id, err)
-				continue
+		deleted := 0
+		for _, id := range esIDs {
+			h := hashName(id)
+			_, existsOCS := cacheOCS[h]
+			_, existsAD := cacheAD[h]
+			if !existsOCS && !existsAD {
+				res, err := esClient.Client.Delete(esCfg.Index, id)
+				if err != nil {
+					log.Printf("[ERROR] Gagal hapus document %s di Elasticsearch: %v", id, err)
+					continue
+				}
+				if res.IsError() {
+					log.Printf("[ERROR] Elasticsearch response error saat hapus %s: %s", id, res.String())
+				} else {
+					deleted++
+				}
+				res.Body.Close()
 			}
-			if res.IsError() {
-				log.Printf("[ERROR] Elasticsearch response error saat hapus %s: %s", id, res.String())
-			} else {
-				deleted++
-			}
-			res.Body.Close()
 		}
-	}
-	log.Printf("[INFO] OCS x AD - Remove Deleted Data, Total: %d", deleted)
+		log.Printf("[INFO] OCS x AD - Remove Deleted Data, Total: %d", deleted)
 
-	// --- Index/update data yang masih ada, gunakan batch dan paralel (goroutine) ---
-	batchSize := 500
-	maxParallel := 4
-	type indexResult struct {
-		success int
-		failed  int
-	}
-	indexBatch := func(batch []parser.FinalComputerRow, ch chan<- indexResult) {
+		// --- Index/update data yang masih ada, gunakan batch dan paralel (goroutine) ---
+		batchSize := 500
+		maxParallel := 4
+		type indexResult struct {
+			success int
+			failed  int
+		}
+		indexBatch := func(batch []parser.FinalComputerRow, ch chan<- indexResult) {
+			success, failed := 0, 0
+			for _, row := range batch {
+				docID := row.ComputerName
+				body, _ := json.Marshal(row)
+				res, err := esClient.Client.Index(esCfg.Index, strings.NewReader(string(body)), esClient.Client.Index.WithDocumentID(docID))
+				if err != nil {
+					log.Printf("[ERROR] Indexing gagal untuk %s: %v", docID, err)
+					failed++
+					continue
+				}
+				if res.IsError() {
+					log.Printf("[ERROR] Elasticsearch response error untuk %s: %s", docID, res.String())
+					failed++
+				} else {
+					success++
+				}
+				res.Body.Close()
+			}
+			ch <- indexResult{success, failed}
+		}
+
+		var batches [][]parser.FinalComputerRow
+		for i := 0; i < len(finalList); i += batchSize {
+			end := i + batchSize
+			if end > len(finalList) {
+				end = len(finalList)
+			}
+			batches = append(batches, finalList[i:end])
+		}
+
+		ch := make(chan indexResult, len(batches))
+		sem := make(chan struct{}, maxParallel)
+
+		for _, batch := range batches {
+			sem <- struct{}{} // acquire
+			go func(b []parser.FinalComputerRow) {
+				defer func() { <-sem }() // release
+				indexBatch(b, ch)
+			}(batch)
+		}
+
 		success, failed := 0, 0
-		for _, row := range batch {
-			docID := row.ComputerName
-			body, _ := json.Marshal(row)
-			res, err := esClient.Client.Index(esCfg.Index, strings.NewReader(string(body)), esClient.Client.Index.WithDocumentID(docID))
-			if err != nil {
-				log.Printf("[ERROR] Indexing gagal untuk %s: %v", docID, err)
-				failed++
-				continue
-			}
-			if res.IsError() {
-				log.Printf("[ERROR] Elasticsearch response error untuk %s: %s", docID, res.String())
-				failed++
-			} else {
-				success++
-			}
-			res.Body.Close()
+		for i := 0; i < len(batches); i++ {
+			res := <-ch
+			success += res.success
+			failed += res.failed
 		}
-		ch <- indexResult{success, failed}
-	}
+		log.Printf("[INFO] Indexing Finished (Batch Parallel). Success: %d, Failed: %d", success, failed)
 
-	var batches [][]parser.FinalComputerRow
-	for i := 0; i < len(finalList); i += batchSize {
-		end := i + batchSize
-		if end > len(finalList) {
-			end = len(finalList)
-		}
-		batches = append(batches, finalList[i:end])
+		time.Sleep(90 * time.Second)
 	}
-
-	ch := make(chan indexResult, len(batches))
-	sem := make(chan struct{}, maxParallel)
-
-	for _, batch := range batches {
-		sem <- struct{}{} // acquire
-		go func(b []parser.FinalComputerRow) {
-			defer func() { <-sem }() // release
-			indexBatch(b, ch)
-		}(batch)
-	}
-
-	// Tunggu semua batch selesai
-	success, failed := 0, 0
-	for i := 0; i < len(batches); i++ {
-		res := <-ch
-		success += res.success
-		failed += res.failed
-	}
-	log.Printf("[INFO] Indexing Finished (Batch Parallel). Success: %d, Failed: %d", success, failed)
 }
