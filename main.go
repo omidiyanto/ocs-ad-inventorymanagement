@@ -104,13 +104,17 @@ func main() {
 	}
 
 	// --- Sinkronisasi dua arah: hapus data yang sudah tidak ada di OCS/AD ---
-	// 1. Build cache dari OCS+AD (hashing)
-	cache := make(map[string]struct{})
+	// 1. Build cache OCS dan AD (hashing)
+	cacheOCS := make(map[string]struct{})
+	cacheAD := make(map[string]struct{})
 	hashName := func(name string) string {
 		return parser.HashComputerName(name)
 	}
-	for _, row := range finalList {
-		cache[hashName(row.ComputerName)] = struct{}{}
+	for _, ocs := range ocsComputers {
+		cacheOCS[hashName(ocs.ComputerName)] = struct{}{}
+	}
+	for _, ad := range cleanData {
+		cacheAD[hashName(ad.ComputerName)] = struct{}{}
 	}
 
 	// 2. Ambil semua document ID dari Elasticsearch
@@ -155,10 +159,13 @@ func main() {
 		}
 	}
 
-	// 3. Hapus document yang tidak ada di cache
+	// 3. Hapus document yang tidak ada di OCS dan tidak ada di AD
 	deleted := 0
 	for _, id := range esIDs {
-		if _, exists := cache[hashName(id)]; !exists {
+		h := hashName(id)
+		_, existsOCS := cacheOCS[h]
+		_, existsAD := cacheAD[h]
+		if !existsOCS && !existsAD {
 			res, err := esClient.Client.Delete(esCfg.Index, id)
 			if err != nil {
 				log.Printf("[ERROR] Gagal hapus document %s di Elasticsearch: %v", id, err)
