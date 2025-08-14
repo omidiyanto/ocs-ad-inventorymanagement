@@ -12,6 +12,7 @@ import (
 	"ocs-ad-inventorymanagement/api"
 	"ocs-ad-inventorymanagement/client"
 	"ocs-ad-inventorymanagement/parser"
+	"ocs-ad-inventorymanagement/web"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -87,7 +88,13 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.POST("/auth-token", api.AuthTokenHandler)
-	r.GET("/delete-computer", api.DeleteComputerHandler(ocsClient.DB))
+	// Frontend GET
+	r.GET("/delete-computer", func(c *gin.Context) {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(200, web.FrontendHTML)
+	})
+	// API POST
+	r.POST("/delete-computer", api.DeleteComputerHandler(ocsClient.DB))
 
 	go func() {
 		if err := r.Run("0.0.0.0:8080"); err != nil {
