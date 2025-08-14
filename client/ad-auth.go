@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -42,10 +43,7 @@ func New(config Config) (*Client, error) {
 
 // Login adalah method dari Client yang melakukan autentikasi.
 func (c *Client) Login() error {
-	fmt.Println("--- MEMULAI PROSES LOGIN ---")
-
 	// Langkah 1: GET halaman login
-	fmt.Println("[*] Langkah 1: Mengunjungi halaman login untuk mendapatkan cookie...")
 	resp, err := c.httpClient.Get(c.config.BaseURL + "/")
 	if err != nil {
 		return fmt.Errorf("gagal melakukan GET request awal: %v", err)
@@ -54,10 +52,9 @@ func (c *Client) Login() error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("status code tidak valid saat GET awal: %d", resp.StatusCode)
 	}
-	fmt.Println("[+] Cookie awal berhasil didapatkan.")
+	// log.Println("[INFO] ADManager Plus - Initial Cookie Successfully fetched.")
 
 	// Langkah 2: POST data login
-	fmt.Println("\n[*] Langkah 2: Mencoba login...")
 	loginURL := c.config.BaseURL + "/j_security_check?LogoutFromSSO=true"
 	loginPayload := url.Values{}
 	loginPayload.Set("is_admp_pass_encrypted", "true")
@@ -79,14 +76,12 @@ func (c *Client) Login() error {
 		return fmt.Errorf("login gagal dengan status code: %d", resp.StatusCode)
 	}
 
-	fmt.Println("[SUCCESS] Login berhasil! Sesi valid.")
-	fmt.Println("---------------------------")
+	log.Println("[SUCCESS] AD Manager Plus - Login Success! Session is valid.")
 	return nil
 }
 
 // FetchComputerReport adalah method dari Client untuk mengambil data laporan.
 func (c *Client) FetchComputerReport() ([]byte, error) {
-	fmt.Println("--- MEMULAI PENGAMBILAN LAPORAN ---")
 	reportURL := c.config.BaseURL + "/api/json/reports/report/getReportResultRows"
 	parsedBaseURL, _ := url.Parse(c.config.BaseURL)
 
@@ -100,7 +95,7 @@ func (c *Client) FetchComputerReport() ([]byte, error) {
 	if csrfToken == "" {
 		return nil, fmt.Errorf("tidak dapat menemukan cookie '%s' setelah login", admpCSRFCookieName)
 	}
-	fmt.Printf("[*] Menggunakan CSRF Token dari cookie: %s\n", csrfToken)
+	// fmt.Printf("[*] Menggunakan CSRF Token dari cookie: %s\n", csrfToken)
 
 	paramsData := map[string]interface{}{
 		"pageNavigateData": map[string]interface{}{"startIndex": 1, "toIndex": 999999, "rangeList": []int{25, 50, 75, 100}, "range": 999999, "totalCount": 0, "isNavigate": false},
@@ -134,6 +129,6 @@ func (c *Client) FetchComputerReport() ([]byte, error) {
 		return nil, fmt.Errorf("gagal mengambil laporan, status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	fmt.Println("[SUCCESS] Berhasil mengambil data laporan!")
+	// log.Println("[SUCCESS] AD Manager Plus - Berhasil mengambil data laporan!")
 	return io.ReadAll(resp.Body)
 }

@@ -32,7 +32,7 @@ type ComputerReportRow struct {
 
 // ParseComputerReport mengubah data mentah menjadi format sederhana.
 func ParseComputerReport(rawData []byte) ([]ComputerReportRow, error) {
-	fmt.Println("\n[*] Memulai transformasi data JSON...")
+	// fmt.Println("\n[*] Memulai transformasi data JSON...")
 	var parsedData RawReportData
 	if err := json.Unmarshal(rawData, &parsedData); err != nil {
 		return nil, fmt.Errorf("gagal mem-parsing JSON mentah: %v", err)
@@ -64,6 +64,6 @@ func ParseComputerReport(rawData []byte) ([]ComputerReportRow, error) {
 			})
 		}
 	}
-	fmt.Println("[+] Transformasi data selesai.")
+	// fmt.Println("[+] Transformasi data selesai.")
 	return simplifiedList, nil
 }

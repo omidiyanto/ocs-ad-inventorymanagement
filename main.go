@@ -68,20 +68,20 @@ func main() {
 	}
 
 	// 6. Log hasil akhir
-	log.Printf("[INFO] Data AD berhasil diparsing, jumlah: %d", len(cleanData))
+	log.Printf("[SUCCESS] AD Manager Plus - Data successfully parsed, Total: %d", len(cleanData))
 
 	// 7. Cek koneksi OCS MySQL dan tampilkan list komputer
 	ocsCfg := client.LoadOCSConfig()
 	ocsClient, err := client.NewOCSMySQLClient(ocsCfg)
 	if err != nil {
-		fmt.Println("[OCS MySQL] Koneksi gagal:", err)
+		fmt.Println("[ERROR] OCS - Koneksi gagal:", err)
 		return
 	}
 	if err := ocsClient.Ping(); err != nil {
-		fmt.Println("[OCS MySQL] Autentikasi gagal:", err)
+		fmt.Println("[ERROR] OCS - Autentikasi gagal:", err)
 		return
 	}
-	fmt.Println("[OCS MySQL] Autentikasi berhasil!")
+	log.Println("[SUCCESS] OCS - Autentication Success!")
 
 	// List komputer OCS
 	ocsComputers, err := parser.ListOCSComputers(ocsClient.DB, 0)
@@ -89,11 +89,11 @@ func main() {
 		log.Printf("[ERROR] Gagal mengambil data komputer OCS: %v", err)
 		return
 	}
-	log.Printf("[INFO] Data OCS berhasil diambil, jumlah: %d", len(ocsComputers))
+	log.Printf("[SUCCESS] OCS - Data successfully parsed, Total: %d", len(ocsComputers))
 
 	// Gabungkan data OCS dan AD
 	finalList := parser.CombineOCSAndAD(ocsComputers, cleanData)
-	log.Printf("[INFO] Data gabungan OCS+AD siap, jumlah: %d", len(finalList))
+	log.Printf("[SUCCESS] OCS x AD - Combined Data, Total: %d", len(finalList))
 
 	// Simpan ke Elasticsearch
 	esCfg := client.LoadElasticsearchConfig()
@@ -179,7 +179,7 @@ func main() {
 			res.Body.Close()
 		}
 	}
-	log.Printf("[INFO] Sinkronisasi hapus selesai. Total dihapus: %d", deleted)
+	log.Printf("[INFO] OCS x AD - Remove Deleted Data, Total: %d", deleted)
 
 	// --- Index/update data yang masih ada ---
 	success, failed := 0, 0
@@ -200,5 +200,5 @@ func main() {
 		}
 		res.Body.Close()
 	}
-	log.Printf("[INFO] Indexing selesai. Sukses: %d, Gagal: %d", success, failed)
+	log.Printf("[INFO] Indexing Finished. Success: %d, Failed: %d", success, failed)
 }
