@@ -79,7 +79,7 @@ func DeleteComputerHandler(db *gorm.DB) gin.HandlerFunc {
 		// Cari id hardware berdasarkan nama.
 		if err := db.Table("hardware").Select("id").Where("name = ?", name).First(&hardware).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Computer tidak ditemukan"})
+				c.JSON(http.StatusNotFound, gin.H{"error": "Computer Not Found"})
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Gagal mencari hardware: %v", err)})

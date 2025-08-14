@@ -258,7 +258,7 @@ var FrontendHTML = `
 
           const answer = document.getElementById('captchaA').value.trim();
           if (parseInt(answer) !== captchaX + captchaY) {
-            showError('Captcha salah!');
+            showError('Wrong Captcha!');
             return;
           }
           if (!document.getElementById('confirmCheck').checked) {
