@@ -69,7 +69,7 @@ func AuthenticateOCSWeb(ocsURL, username, password string) error {
 	defer resp2.Body.Close()
 	body, _ := ioutil.ReadAll(resp2.Body)
 	if !bytes.Contains(body, []byte("My dashboard")) {
-		return errors.New("Login to OCS Failed (Wrong username/password credentials or cannot access dashboard)")
+		return errors.New("Login to OCS Failed (Wrong username/password credentials)")
 	}
 	return nil
 }
