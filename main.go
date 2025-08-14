@@ -103,7 +103,78 @@ func main() {
 		return
 	}
 
-	// Indexing per row (bulk bisa dioptimasi nanti)
+	// --- Sinkronisasi dua arah: hapus data yang sudah tidak ada di OCS/AD ---
+	// 1. Build cache dari OCS+AD (hashing)
+	cache := make(map[string]struct{})
+	hashName := func(name string) string {
+		return parser.HashComputerName(name)
+	}
+	for _, row := range finalList {
+		cache[hashName(row.ComputerName)] = struct{}{}
+	}
+
+	// 2. Ambil semua document ID dari Elasticsearch
+	// (gunakan search API, ambil hanya field _id)
+	var esIDs []string
+	{
+		// Ambil 10.000 data per request (bisa dioptimasi scroll/bulk jika data sangat besar)
+		from := 0
+		size := 10000
+		for {
+			query := `{"query":{"match_all":{}},"_source":false,"from":` + fmt.Sprintf("%d", from) + `,"size":` + fmt.Sprintf("%d", size) + `}`
+			res, err := esClient.Client.Search(
+				esClient.Client.Search.WithIndex(esCfg.Index),
+				esClient.Client.Search.WithBody(strings.NewReader(query)),
+			)
+			if err != nil {
+				log.Printf("[ERROR] Gagal mengambil document ID dari Elasticsearch: %v", err)
+				break
+			}
+			defer res.Body.Close()
+			var resp struct {
+				Hits struct {
+					Hits []struct {
+						ID string `json:"_id"`
+					} `json:"hits"`
+				} `json:"hits"`
+			}
+			if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+				log.Printf("[ERROR] Gagal decode response Elasticsearch: %v", err)
+				break
+			}
+			if len(resp.Hits.Hits) == 0 {
+				break
+			}
+			for _, hit := range resp.Hits.Hits {
+				esIDs = append(esIDs, hit.ID)
+			}
+			if len(resp.Hits.Hits) < size {
+				break
+			}
+			from += size
+		}
+	}
+
+	// 3. Hapus document yang tidak ada di cache
+	deleted := 0
+	for _, id := range esIDs {
+		if _, exists := cache[hashName(id)]; !exists {
+			res, err := esClient.Client.Delete(esCfg.Index, id)
+			if err != nil {
+				log.Printf("[ERROR] Gagal hapus document %s di Elasticsearch: %v", id, err)
+				continue
+			}
+			if res.IsError() {
+				log.Printf("[ERROR] Elasticsearch response error saat hapus %s: %s", id, res.String())
+			} else {
+				deleted++
+			}
+			res.Body.Close()
+		}
+	}
+	log.Printf("[INFO] Sinkronisasi hapus selesai. Total dihapus: %d", deleted)
+
+	// --- Index/update data yang masih ada ---
 	success, failed := 0, 0
 	for _, row := range finalList {
 		docID := row.ComputerName
