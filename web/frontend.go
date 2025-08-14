@@ -9,7 +9,17 @@ var FrontendHTML = `
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Delete Computer - OCS Inventory</title>
   <style>
-    /* General Styling */
+    /* Light Mode Palette & Base */
+    :root {
+      --bg-page: #f9fafb; /* Off-white */
+      --bg-card: #ffffff; /* Pure white */
+      --text-primary: #1f2937; /* Dark Gray */
+      --text-secondary: #6b7280; /* Medium Gray */
+      --border-color: #d1d5db; /* Light Gray */
+      --accent-purple: #93318e;
+      --accent-purple-hover: #7a2876; /* Darker purple */
+      --error-color: #be123c; /* Rose Red */
+    }
     * {
       box-sizing: border-box;
       margin: 0;
@@ -19,12 +29,13 @@ var FrontendHTML = `
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
     }
     body {
-      background: #18171c;
-      color: #e6e6e6;
+      background: var(--bg-page);
+      color: var(--text-primary);
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      padding: 1rem;
     }
     .hidden {
       display: none !important;
@@ -34,27 +45,28 @@ var FrontendHTML = `
     .ocs-modal-bg {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.7);
+      background: rgba(0,0,0,0.5);
       display: flex;
       align-items: center;
       justify-content: center;
       z-index: 10;
     }
     .ocs-step {
-      border: 2px solid #e6e6e6;
+      border: 1px solid var(--border-color);
       border-radius: 1rem;
       padding: 2rem;
-      background: rgba(24,23,28,0.95);
-      min-width: 320px;
-      max-width: 350px;
+      background: var(--bg-card);
+      width: 95%;
+      max-width: 380px; /* Slightly larger for better spacing */
       display: flex;
       flex-direction: column;
       align-items: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
     }
 
     /* Logo and Titles */
     .ocs-logo {
-      border: 2px solid #e6e6e6;
+      border: 2px solid var(--accent-purple);
       border-radius: 9999px;
       width: 64px;
       height: 64px;
@@ -64,13 +76,13 @@ var FrontendHTML = `
       margin-bottom: 1rem;
     }
     .ocs-logo-text {
-      color: #93318e;
+      color: var(--accent-purple);
       font-size: 2rem;
       font-weight: bold;
     }
     .ocs-title {
-      color: #e6e6e6;
-      font-size: 2rem;
+      color: var(--text-primary);
+      font-size: 1.875rem; /* Slightly adjusted size */
       font-weight: bold;
       margin-bottom: 1rem;
       text-align: center;
@@ -81,57 +93,60 @@ var FrontendHTML = `
       width: 100%;
       display: flex;
       flex-direction: column;
-      gap: 0.75rem; /* 12px */
+      gap: 0.85rem;
     }
     .ocs-input {
-      background: transparent;
-      border: 2px solid #e6e6e6;
-      color: #e6e6e6;
-      border-radius: 4px;
-      padding: 0.5rem 0.75rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: 8px; /* Softer radius */
+      padding: 0.65rem 0.75rem;
       width: 100%;
+      transition: border-color 0.2s, box-shadow 0.2s;
     }
     .ocs-input:focus {
       outline: none;
-      border-color: #93318e;
+      border-color: var(--accent-purple);
+      box-shadow: 0 0 0 3px rgba(147, 49, 142, 0.2);
     }
     .ocs-label {
-      color: #e6e6e6;
+      color: var(--text-secondary);
       display: flex;
       align-items: center;
-      gap: 0.5rem; /* 8px */
+      gap: 0.5rem;
+      cursor: pointer;
     }
     .ocs-checkbox {
-      background: transparent;
-      border: 2px solid #e6e6e6;
-      color: #e6e6e6;
-      accent-color: #93318e;
+      width: 1em;
+      height: 1em;
+      accent-color: var(--accent-purple);
     }
     .ocs-btn {
-      background: #93318e;
-      color: #e6e6e6;
-      border: 2px solid #93318e;
+      background: var(--accent-purple);
+      color: #ffffff;
+      border: 1px solid var(--accent-purple);
       border-radius: 8px;
-      padding: 0.5rem 1.5rem;
+      padding: 0.75rem 1.5rem;
       font-weight: bold;
-      transition: background 0.2s, color 0.2s;
+      transition: background-color 0.2s;
       cursor: pointer;
       margin-top: 0.5rem;
     }
     .ocs-btn:hover {
-      background: #e6e6e6;
-      color: #93318e;
+      background: var(--accent-purple-hover);
+      border-color: var(--accent-purple-hover);
     }
     .ocs-btn:disabled {
-      opacity: 0.5;
+      opacity: 0.6;
       cursor: not-allowed;
     }
 
     /* Specific Step Content */
     .ocs-delete-info {
       text-align: center;
-      margin-bottom: 0.5rem;
+      margin-bottom: 1rem;
       line-height: 1.5;
+      color: var(--text-secondary);
     }
     .ocs-captcha-container {
       display: flex;
@@ -141,15 +156,14 @@ var FrontendHTML = `
       margin-top: 0.5rem;
     }
     #captchaA {
-      width: 5rem; /* 80px */
+      width: 5rem;
       text-align: center;
-      padding: 0.25rem 0.5rem;
     }
     .ocs-confirm-label {
-      font-size: 0.875rem; /* 14px */
+      font-size: 0.875rem;
     }
     .ocs-success-check {
-      color: #93318e;
+      color: var(--accent-purple);
       width: 48px;
       height: 48px;
       margin-bottom: 1rem;
@@ -157,38 +171,52 @@ var FrontendHTML = `
     #successMsg {
       text-align: center;
       margin-bottom: 1rem;
+      font-size: 1.125rem;
+      color: var(--text-primary);
     }
-    .font-bold { font-weight: bold; }
+    .font-bold { font-weight: 600; }
 
     /* Custom Error Modal */
     .error-modal-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.8);
+        background: rgba(0, 0, 0, 0.6);
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 100;
+        padding: 1rem;
     }
     .error-modal-box {
-        background: #18171c;
-        border: 2px solid #ff6b6b;
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
         border-radius: 1rem;
         padding: 2rem;
-        color: #e6e6e6;
         text-align: center;
-        min-width: 320px;
+        width: 95%;
         max-width: 400px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
     .error-modal-title {
         font-size: 1.5rem;
         font-weight: bold;
         margin-bottom: 1rem;
-        color: #ff6b6b;
+        color: var(--error-color);
     }
     .error-modal-text {
         margin-bottom: 1.5rem;
         line-height: 1.5;
+        color: var(--text-secondary);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 400px) {
+      .ocs-step, .error-modal-box {
+        padding: 1.5rem;
+      }
+      .ocs-title {
+        font-size: 1.5rem;
+      }
     }
   </style>
 </head>
@@ -235,7 +263,7 @@ var FrontendHTML = `
 
     <div id="stepSuccess" class="ocs-step hidden">
       <svg class="ocs-success-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
-      <div class="ocs-title" style="color:#93318e;">Success</div>
+      <div class="ocs-title" style="color: var(--accent-purple);">Success</div>
       <div id="successMsg"></div>
       <button onclick="location.reload()" class="ocs-btn">OK</button>
     </div>
@@ -254,7 +282,6 @@ var FrontendHTML = `
     errorModalCloseBtn.onclick = function() {
         errorModal.classList.add('hidden');
     }
-    // Close modal if user clicks outside of it
     window.onclick = function(event) {
         if (event.target == errorModal) {
             errorModal.classList.add('hidden');
@@ -344,7 +371,6 @@ var FrontendHTML = `
       }
 
       try {
-        // Ambil token dari cookie
         let jwtToken = '';
         document.cookie.split(';').forEach(function(c) {
           let [k,v] = c.trim().split('=');
@@ -379,11 +405,9 @@ var FrontendHTML = `
     // Prevent direct access to confirm/success without login
     window.addEventListener('DOMContentLoaded', function() {
       if (!compName) {
-        // Error already shown, just ensure login step is visible
         showStep('stepLogin');
         return;
       }
-      // If already have jwt in cookie, allow direct confirm
       let hasToken = false;
       document.cookie.split(';').forEach(function(c) {
         let [k,v] = c.trim().split('=');
