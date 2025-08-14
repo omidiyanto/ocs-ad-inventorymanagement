@@ -15,6 +15,11 @@ func DeleteComputerHandler(db *gorm.DB) gin.HandlerFunc {
 	// Regex untuk validasi nama tabel tetap dipertahankan sebagai lapisan pertahanan tambahan (defense-in-depth).
 	var validTableName = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
 
+	// Whitelist nama tabel yang diizinkan
+	var allowedTables = map[string]struct{}{
+		"accesslog": {}, "accountinfo": {}, "accountinfo_config": {}, "archive": {}, "assets_categories": {}, "auth_attempt": {}, "batteries": {}, "bios": {}, "blacklist_macaddresses": {}, "blacklist_serials": {}, "blacklist_subnet": {}, "config": {}, "config_ldap": {}, "conntrack": {}, "controllers": {}, "cpus": {}, "cve_search": {}, "cve_search_computer": {}, "cve_search_correspondance": {}, "cve_search_history": {}, "deleted_equiv": {}, "deploy": {}, "devices": {}, "devicetype": {}, "dico_ignored": {}, "dico_soft": {}, "download_affect_rules": {}, "download_available": {}, "download_enable": {}, "download_history": {}, "download_servers": {}, "downloadwk_conf_values": {}, "downloadwk_fields": {}, "downloadwk_history": {}, "downloadwk_pack": {}, "downloadwk_statut_request": {}, "downloadwk_tab_values": {}, "drives": {}, "engine_mutex": {}, "engine_persistent": {}, "extensions": {}, "files": {}, "groups": {}, "groups_cache": {}, "hardware": {}, "hardware_osname_cache": {}, "history": {}, "inputs": {}, "itmgmt_comments": {}, "javainfo": {}, "journallog": {}, "languages": {}, "layouts": {}, "local_groups": {}, "local_users": {}, "locks": {}, "memories": {}, "modems": {}, "monitors": {}, "netmap": {}, "network_devices": {}, "networks": {}, "notification": {}, "notification_config": {}, "ports": {}, "printers": {}, "prolog_conntrack": {}, "regconfig": {}, "registry": {}, "registry_name_cache": {}, "registry_regvalue_cache": {}, "reports_notifications": {}, "repository": {}, "saas": {}, "saas_exp": {}, "save_query": {}, "schedule_wol": {}, "sim": {}, "slots": {}, "snmp_accountinfo": {}, "snmp_communities": {}, "snmp_configs": {}, "snmp_default": {}, "snmp_labels": {}, "snmp_mibs": {}, "snmp_ocs": {}, "snmp_types": {}, "snmp_types_conditions": {}, "software": {}, "software_categories": {}, "software_categories_link": {}, "software_category_exp": {}, "software_link": {}, "software_name": {}, "software_publisher": {}, "software_version": {}, "softwares_name_cache": {}, "sounds": {}, "ssl_store": {}, "storages": {}, "subnet": {}, "tags": {}, "temp_files": {}, "usbdevices": {}, "videos": {}, "virtualmachines": {},
+	}
+
 	return func(c *gin.Context) {
 		name := c.Query("name")
 		if name == "" {
@@ -74,6 +79,11 @@ func DeleteComputerHandler(db *gorm.DB) gin.HandlerFunc {
 			// Lakukan validasi nama tabel sebagai lapisan keamanan tambahan.
 			if !validTableName.MatchString(tableName) {
 				// skip tabel yang namanya tidak valid untuk mencegah hal tak terduga.
+				continue
+			}
+			// Validasi whitelist nama tabel
+			if _, ok := allowedTables[tableName]; !ok {
+				// skip tabel yang tidak ada di whitelist
 				continue
 			}
 
