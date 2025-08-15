@@ -6,6 +6,8 @@ services:
       - .env
     networks:
       - ocs-itop-ad_network
+    ports:
+      - "8081:8081"
 
 networks:
     ocs-itop-ad_network:
