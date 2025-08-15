@@ -87,14 +87,29 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
-	r.POST("/auth-token", api.AuthTokenHandler)
+
+	basePath := os.Getenv("BASE_PATH_URL")
+	if basePath == "" {
+		basePath = "/ocsextra"
+	}
+	// Pastikan basePath diawali dengan /
+	if !strings.HasPrefix(basePath, "/") {
+		basePath = "/" + basePath
+	}
+	// Pastikan basePath tidak diakhiri / (kecuali root)
+	if len(basePath) > 1 && strings.HasSuffix(basePath, "/") {
+		basePath = strings.TrimRight(basePath, "/")
+	}
+
+	apiGroup := r.Group(basePath + "/api")
+	apiGroup.POST("/auth-token", api.AuthTokenHandler)
+	apiGroup.POST("/delete-computer", api.DeleteComputerHandler(ocsClient.DB))
+
 	// Frontend GET
-	r.GET("/delete-computer", func(c *gin.Context) {
+	r.GET(basePath+"/delete-computer", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(200, web.FrontendHTML)
 	})
-	// API POST
-	r.POST("/delete-computer", api.DeleteComputerHandler(ocsClient.DB))
 
 	go func() {
 		if err := r.Run("0.0.0.0:8080"); err != nil {

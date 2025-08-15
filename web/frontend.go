@@ -166,9 +166,13 @@ var FrontendHTML = `
   </div>
 
   <script>
-    // Salin tempel semua JS dari respons sebelumnya karena tidak ada perubahan logika
+    // BASE_PATH_URL dari backend, fallback ke '/ocsextra' jika tidak ada
+    var BASE_PATH = window.__BASE_PATH_URL || '/ocsextra';
+    // Hilangkan trailing slash jika ada
+    if (BASE_PATH.length > 1 && BASE_PATH.endsWith('/')) BASE_PATH = BASE_PATH.slice(0, -1);
+
     const errorModal = document.getElementById('errorModal');
-    if (errorModal) { // Add null check for robustness
+    if (errorModal) {
         errorModal.innerHTML = '<div class="error-modal-box"><div class="error-modal-title">Error</div><p id="errorModalText" class="error-modal-text"></p><button id="errorModalCloseBtn" class="ocs-btn">OK</button></div>';
         const errorModalText = document.getElementById('errorModalText');
         const errorModalCloseBtn = document.getElementById('errorModalCloseBtn');
@@ -179,7 +183,7 @@ var FrontendHTML = `
         }
         if(errorModalCloseBtn) errorModalCloseBtn.onclick = function() { if(errorModal) errorModal.classList.add('hidden'); };
         window.onclick = function(event) { if (event.target == errorModal) { if(errorModal) errorModal.classList.add('hidden'); } };
-    
+
         // Get computer name from query param
         function getQueryParam(name) {
           const url = new URL(window.location.href);
@@ -235,7 +239,7 @@ var FrontendHTML = `
           if (!username || !password) return showError('Username dan password wajib diisi.');
 
           try {
-            const res = await fetch('/auth-token', {
+            const res = await fetch(BASE_PATH + '/api/auth-token', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ username, password })
@@ -279,7 +283,7 @@ var FrontendHTML = `
                 return;
             }
 
-            const res = await fetch('/delete-computer', {
+            const res = await fetch(BASE_PATH + '/api/delete-computer', {
               method: 'POST',
               headers: {
                 'Authorization': 'Bearer ' + localJwtToken,
