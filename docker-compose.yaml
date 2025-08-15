@@ -10,3 +10,4 @@ services:
 networks:
     ocs-itop-ad_network:
       external: true
+      # driver: bridge
