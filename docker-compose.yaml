@@ -1,6 +1,6 @@
 services:
   ocs-ad-inventory:
-    image: ocs-ad-inventory:latest
+    image: registry.satnusa.com/ocs-ad-inventory-management:latest
     container_name: ocs-ad-inventory
     env_file:
       - .env
