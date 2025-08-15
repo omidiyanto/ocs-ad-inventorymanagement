@@ -111,8 +111,14 @@ func main() {
 		c.String(200, web.FrontendHTML)
 	})
 
+	// Ambil port dari env, default 8080
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	addr := ":" + port
 	go func() {
-		if err := r.Run("0.0.0.0:8080"); err != nil {
+		if err := r.Run(addr); err != nil {
 			log.Fatalf("[ERROR] Gagal menjalankan web API: %v", err)
 		}
 	}()
