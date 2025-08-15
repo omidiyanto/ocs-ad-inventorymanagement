@@ -11,6 +11,7 @@ var FrontendHTML = `
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Delete Computer - OCS Inventory</title>
+  <link rel="icon" type="image/png" href="` + base64LogoOCS + `">
   <style>
     /* Light Mode Palette & Base */
     :root {
