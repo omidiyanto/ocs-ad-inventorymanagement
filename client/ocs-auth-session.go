@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -29,7 +30,15 @@ func LoadOCSAuthConfig() OCSAuthConfig {
 // AuthenticateOCSWeb tries to login to OCS web and returns username if valid, else error
 func AuthenticateOCSWeb(ocsURL, username, password string) error {
 	// 1. Get new PHPSESSID
-	client := &http.Client{Timeout: 10 * time.Second}
+	skipTLS := false
+	if strings.HasPrefix(ocsURL, "https://") {
+		skipTLS = true
+	}
+	tr := &http.Transport{}
+	if skipTLS {
+		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	client := &http.Client{Timeout: 10 * time.Second, Transport: tr}
 	resp, err := client.Get(ocsURL)
 	if err != nil {
 		return fmt.Errorf("gagal akses OCS web: %w", err)
