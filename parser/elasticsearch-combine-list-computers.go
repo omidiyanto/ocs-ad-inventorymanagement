@@ -16,10 +16,10 @@ type FinalComputerRow struct {
 	OCSLastInventory            string `json:"ocs_last_inventory,omitempty"`
 	OCSLastCome                 string `json:"ocs_last_come,omitempty"`
 	ADLastLogonTime             string `json:"ad_last_logon_time,omitempty"`
-	ADNotLoginMoreThan30d       bool   `json:"ad_not_login_more_than_30d"`
-	ADNotLoginMoreThan45d       bool   `json:"ad_not_login_more_than_45d"`
-	OCSLastInventoryMoreThan30d bool   `json:"ocs_last_inventory_more_than_30d"`
-	OCSLastComeMoreThan30d      bool   `json:"ocs_last_come_more_than_30d"`
+	ADNotLoginMoreThan30d       *bool  `json:"ad_not_login_more_than_30d,omitempty"`
+	ADNotLoginMoreThan45d       *bool  `json:"ad_not_login_more_than_45d,omitempty"`
+	OCSLastInventoryMoreThan30d *bool  `json:"ocs_last_inventory_more_than_30d,omitempty"`
+	OCSLastComeMoreThan30d      *bool  `json:"ocs_last_come_more_than_30d,omitempty"`
 	SyncTime                    string `json:"@timestamp"`
 }
 
@@ -87,23 +87,25 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 		cache[key] = ocs.ComputerName
 
 		// Logic untuk ocs_last_inventory_more_than_30d dan ocs_last_come_more_than_30d
-		ocsLastInventoryMoreThan30d := false
-		ocsLastComeMoreThan30d := false
-		if isZeroOrDash(ocs.OCSLastInventory) {
-			ocsLastInventoryMoreThan30d = true
-		} else if t, ok := parseTime(ocs.OCSLastInventory); ok {
-			diff := now.Sub(t)
-			if diff.Hours() > 24*30 {
-				ocsLastInventoryMoreThan30d = true
+		var ocsLastInventoryMoreThan30d *bool
+		var ocsLastComeMoreThan30d *bool
+		if !isZeroOrDash(ocs.OCSLastInventory) {
+			if t, ok := parseTime(ocs.OCSLastInventory); ok {
+				b := now.Sub(t).Hours() > 24*30
+				ocsLastInventoryMoreThan30d = &b
 			}
+		} else {
+			b := true
+			ocsLastInventoryMoreThan30d = &b
 		}
-		if isZeroOrDash(ocs.OCSLastCome) {
-			ocsLastComeMoreThan30d = true
-		} else if t, ok := parseTime(ocs.OCSLastCome); ok {
-			diff := now.Sub(t)
-			if diff.Hours() > 24*30 {
-				ocsLastComeMoreThan30d = true
+		if !isZeroOrDash(ocs.OCSLastCome) {
+			if t, ok := parseTime(ocs.OCSLastCome); ok {
+				b := now.Sub(t).Hours() > 24*30
+				ocsLastComeMoreThan30d = &b
 			}
+		} else {
+			b := true
+			ocsLastComeMoreThan30d = &b
 		}
 
 		result[ocs.ComputerName] = &FinalComputerRow{
@@ -116,8 +118,8 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 			OCSLastInventory:            ocs.OCSLastInventory,
 			OCSLastCome:                 ocs.OCSLastCome,
 			ADLastLogonTime:             "",
-			ADNotLoginMoreThan30d:       false,
-			ADNotLoginMoreThan45d:       false,
+			ADNotLoginMoreThan30d:       nil,
+			ADNotLoginMoreThan45d:       nil,
 			OCSLastInventoryMoreThan30d: ocsLastInventoryMoreThan30d,
 			OCSLastComeMoreThan30d:      ocsLastComeMoreThan30d,
 			// Aturan 1 & 3: Buat @timestamp dalam format RFC3339 dari data OCS
@@ -131,19 +133,19 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 		key := HashComputerName(ad.ComputerName)
 
 		// Hitung field login > 30/45 hari
-		moreThan30d, moreThan45d := false, false
-		if isZeroOrDash(ad.LastLogonTime) {
-			// Anggap tidak pernah login, maka pasti lebih dari 30 dan 45 hari
-			moreThan30d = true
-			moreThan45d = true
-		} else if t, ok := parseTime(ad.LastLogonTime); ok {
-			diff := now.Sub(t)
-			if diff.Hours() > 24*30 {
-				moreThan30d = true
+		var moreThan30d *bool
+		var moreThan45d *bool
+		if !isZeroOrDash(ad.LastLogonTime) {
+			if t, ok := parseTime(ad.LastLogonTime); ok {
+				b30 := now.Sub(t).Hours() > 24*30
+				b45 := now.Sub(t).Hours() > 24*45
+				moreThan30d = &b30
+				moreThan45d = &b45
 			}
-			if diff.Hours() > 24*45 {
-				moreThan45d = true
-			}
+		} else {
+			b := true
+			moreThan30d = &b
+			moreThan45d = &b
 		}
 
 		if cname, ok := cache[key]; ok {
@@ -159,8 +161,6 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 			row.SyncTime = getSyncTimestamp(row.OCSLastInventory, ad.LastLogonTime)
 		} else {
 			// Komputer hanya ada di AD
-			ocsLastInventoryMoreThan30d := true
-			ocsLastComeMoreThan30d := true
 			result[ad.ComputerName] = &FinalComputerRow{
 				ComputerName:     ad.ComputerName,
 				ExistsInOCS:      false,
@@ -173,8 +173,8 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 				ADLastLogonTime:             ad.LastLogonTime,
 				ADNotLoginMoreThan30d:       moreThan30d,
 				ADNotLoginMoreThan45d:       moreThan45d,
-				OCSLastInventoryMoreThan30d: ocsLastInventoryMoreThan30d,
-				OCSLastComeMoreThan30d:      ocsLastComeMoreThan30d,
+				OCSLastInventoryMoreThan30d: nil,
+				OCSLastComeMoreThan30d:      nil,
 				// Aturan 1 & 3: Buat @timestamp dalam format RFC3339 dari data AD
 				SyncTime: getSyncTimestamp("", ad.LastLogonTime),
 			}
