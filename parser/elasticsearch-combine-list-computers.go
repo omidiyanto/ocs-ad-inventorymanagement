@@ -81,7 +81,7 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 	isZeroOrDash := func(s string) bool {
 		return s == "0" || s == "-"
 	}
-	now := time.Now().UTC()
+	now := time.Now().Local()
 
 	// Proses data dari OCS
 	for _, ocs := range ocsList {

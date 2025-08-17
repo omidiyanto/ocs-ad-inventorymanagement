@@ -9,5 +9,5 @@ RUN go build -o main .
 FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/main .
-RUN chmod a+x /app/main
+RUN chmod a+x /app/main && apk add --update alpine-conf tzdata  && setup-timezone -z Asia/Jakarta
 CMD ["/app/main"]
