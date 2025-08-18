@@ -28,8 +28,20 @@ type FinalComputerRow struct {
 
 // HashComputerName membuat hash dari nama komputer untuk deduplikasi.
 func HashComputerName(name string) string {
+	// Normalisasi: hapus semua spasi, ubah ke huruf kecil, hilangkan karakter non-alfanumerik
+	norm := strings.ToLower(name)
+	norm = strings.ReplaceAll(norm, " ", "")
+	norm = strings.TrimSpace(norm)
+	// Hilangkan karakter non-alfanumerik
+	var filtered []rune
+	for _, r := range norm {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			filtered = append(filtered, r)
+		}
+	}
+	norm = string(filtered)
 	h := sha1.New()
-	h.Write([]byte(strings.ToLower(strings.TrimSpace(name))))
+	h.Write([]byte(norm))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -88,6 +100,7 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 	for _, ocs := range ocsList {
 		key := HashComputerName(ocs.ComputerName)
 		cache[key] = ocs.ComputerName
+		// fmt.Printf("[DEBUG][OCS] ComputerName: '%s' | Hash: '%s'\n", ocs.ComputerName, key)
 
 		// Logic untuk ocs_last_inventory_more_than_30d dan ocs_last_come_more_than_30d
 		var ocsLastInventoryMoreThan30d *bool
@@ -139,6 +152,7 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 	// now dan isZeroOrDash sudah didefinisikan di atas
 	for _, ad := range adList {
 		key := HashComputerName(ad.ComputerName)
+		// fmt.Printf("[DEBUG][AD] ComputerName: '%s' | Hash: '%s'\n", ad.ComputerName, key)
 
 		// Hitung field login > 30/45 hari
 		var moreThan30d *bool

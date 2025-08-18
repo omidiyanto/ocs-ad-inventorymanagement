@@ -28,8 +28,6 @@ func loadConfig() (client.Config, error) {
 		"AD_BASE_URL":           &cfg.BaseURL,
 		"AD_USERNAME":           &cfg.Username,
 		"AD_ENCRYPTED_PASSWORD": &cfg.EncryptedPassword,
-		"AD_REPORT_ID":          &cfg.ReportID,
-		"AD_GENERATION_ID":      &cfg.GenerationID,
 	}
 
 	for key, valuePtr := range requiredVars {
