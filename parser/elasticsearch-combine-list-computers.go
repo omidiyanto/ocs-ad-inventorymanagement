@@ -16,6 +16,7 @@ type FinalComputerRow struct {
 	OCSLastInventory            string `json:"ocs_last_inventory,omitempty"`
 	OCSLastCome                 string `json:"ocs_last_come,omitempty"`
 	ADLastLogonTime             string `json:"ad_last_logon_time,omitempty"`
+	ADLastModifiedTime          string `json:"ad_last_modified_time,omitempty"`
 	ADNotLoginMoreThan30d       *bool  `json:"ad_not_login_more_than_30d,omitempty"`
 	ADNotLoginMoreThan45d       *bool  `json:"ad_not_login_more_than_45d,omitempty"`
 	OCSLastInventoryMoreThan30d *bool  `json:"ocs_last_inventory_more_than_30d,omitempty"`
@@ -165,6 +166,7 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 			row.ADStatus = ad.ComputerStatus
 			// Aturan 2: Biarkan format string original
 			row.ADLastLogonTime = ad.LastLogonTime
+			row.ADLastModifiedTime = ad.LastModifiedTime
 			row.ADNotLoginMoreThan30d = moreThan30d
 			row.ADNotLoginMoreThan45d = moreThan45d
 			row.ADInactiveDurationDays = adInactiveDurationDays
@@ -182,6 +184,7 @@ func CombineOCSAndAD(ocsList []OCSComputerRow, adList []ComputerReportRow) []Fin
 				OCSLastCome:      "",
 				// Aturan 2: Biarkan format string original
 				ADLastLogonTime:             ad.LastLogonTime,
+				ADLastModifiedTime:          ad.LastModifiedTime,
 				ADNotLoginMoreThan30d:       moreThan30d,
 				ADNotLoginMoreThan45d:       moreThan45d,
 				OCSLastInventoryMoreThan30d: nil,

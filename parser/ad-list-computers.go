@@ -25,9 +25,10 @@ type RawReportData struct {
 
 // ComputerReportRow adalah struktur untuk hasil akhir yang kita inginkan.
 type ComputerReportRow struct {
-	ComputerName   string `json:"computer_name"`
-	LastLogonTime  string `json:"last_logon_time"`
-	ComputerStatus string `json:"computer_status"`
+	ComputerName     string `json:"computer_name"`
+	LastLogonTime    string `json:"last_logon_time"`
+	ComputerStatus   string `json:"computer_status"`
+	LastModifiedTime string `json:"ad_last_modified_time"`
 }
 
 // ParseComputerReport mengubah data mentah menjadi format sederhana.
@@ -44,6 +45,7 @@ func ParseComputerReport(rawData []byte) ([]ComputerReportRow, error) {
 		3001: "computer_name",
 		3019: "last_logon_time",
 		3021: "computer_status",
+		3012: "ad_last_modified_time",
 	}
 
 	for _, row := range parsedData.ResultRows {
@@ -57,10 +59,12 @@ func ParseComputerReport(rawData []byte) ([]ComputerReportRow, error) {
 		if name, ok := item["computer_name"]; ok {
 			logon, _ := item["last_logon_time"]
 			status, _ := item["computer_status"]
+			modified, _ := item["ad_last_modified_time"]
 			simplifiedList = append(simplifiedList, ComputerReportRow{
-				ComputerName:   name,
-				LastLogonTime:  logon,
-				ComputerStatus: strings.ToLower(status),
+				ComputerName:     name,
+				LastLogonTime:    logon,
+				ComputerStatus:   strings.ToLower(status),
+				LastModifiedTime: modified,
 			})
 		}
 	}
