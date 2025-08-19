@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -28,6 +29,7 @@ type Config struct {
 type Client struct {
 	httpClient *http.Client
 	config     Config
+	mu         sync.RWMutex
 }
 
 // IsSessionValid checks if the ADManager Plus session is still valid by checking the existence of the CSRF cookie.
@@ -84,6 +86,31 @@ func (c *Client) GetLatestGenerationID(reportId string, params string) (string, 
 	return "", fmt.Errorf("generationId tidak ditemukan di response")
 }
 
+// SetGenerationID menyimpan generationId terbaru secara thread-safe.
+func (c *Client) SetGenerationID(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.config.GenerationID = id
+}
+
+// GetCachedGenerationID mengembalikan generationId yang tersimpan secara thread-safe.
+func (c *Client) GetCachedGenerationID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.config.GenerationID
+}
+
+// RefreshGenerationID mengambil generationId terbaru dan menyimpannya.
+func (c *Client) RefreshGenerationID(reportId string, params string) error {
+	id, err := c.GetLatestGenerationID(reportId, params)
+	if err != nil {
+		return err
+	}
+	c.SetGenerationID(id)
+	log.Println("[INFO] AD Manager Plus - Refreshed Generation ID:", id)
+	return nil
+}
+
 // New membuat instance baru dari Client.
 func New(config Config) (*Client, error) {
 	jar, err := cookiejar.New(nil)
@@ -135,17 +162,22 @@ func (c *Client) Login() error {
 	return nil
 }
 
-// FetchComputerReport mengambil data laporan dengan generationId terbaru untuk 'All Computers'.
+// FetchComputerReport mengambil data laporan menggunakan generationId yang tersimpan.
 func (c *Client) FetchComputerReport() ([]byte, error) {
 	// Hardcoded reportId untuk 'All Computers' (bisa diubah jika perlu)
 	reportId := "210"
 	// Params sesuai contoh, bisa diubah/dibuat dinamis jika perlu
 	params := `{"selectedDomains":["satnusa.com"],"domainVsOUList":{"DC=satnusa,DC=com":[]},"domainVsExcludeOUList":{"DC=satnusa,DC=com":[]},"domainVsExcludeChildOU":{"DC=satnusa,DC=com":false}}`
-	generationId, err := c.GetLatestGenerationID(reportId, params)
-	log.Println("[INFO] AD Manager Plus - Using Generation ID:", generationId)
-	if err != nil {
-		return nil, fmt.Errorf("gagal mendapatkan generationId: %v", err)
+	generationId := c.GetCachedGenerationID()
+	if generationId == "" {
+		id, err := c.GetLatestGenerationID(reportId, params)
+		if err != nil {
+			return nil, fmt.Errorf("gagal mendapatkan generationId: %v", err)
+		}
+		c.SetGenerationID(id)
+		generationId = id
 	}
+	log.Println("[INFO] AD Manager Plus - Using Generation ID:", generationId)
 	reportURL := c.config.BaseURL + "/api/json/reports/report/getReportResultRows"
 	parsedBaseURL, _ := url.Parse(c.config.BaseURL)
 

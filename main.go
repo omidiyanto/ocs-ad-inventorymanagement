@@ -106,7 +106,29 @@ func main() {
 		}
 	}()
 
-	// Scheduler: jalankan sinkronisasi setiap 12 jam sekali
+	// Refresher: perbarui generationId setiap 12 jam sekali
+	go func() {
+		reportId := "210"
+		params := `{"selectedDomains":["satnusa.com"],"domainVsOUList":{"DC=satnusa,DC=com":[]},"domainVsExcludeOUList":{"DC=satnusa,DC=com":[]},"domainVsExcludeChildOU":{"DC=satnusa,DC=com":false}}`
+		for {
+			if !adClient.IsSessionValid() {
+				log.Println("[INFO] ADManager Plus - Session expired. Renewing session for GenerationID refresh...")
+				if err := adClient.Login(); err != nil {
+					log.Printf("[ERROR] ADManager Plus - Login failed during GenerationID refresh: %v", err)
+					time.Sleep(60 * time.Second)
+					continue
+				}
+			}
+			if err := adClient.RefreshGenerationID(reportId, params); err != nil {
+				log.Printf("[ERROR] Gagal refresh generationId: %v", err)
+				time.Sleep(300 * time.Second)
+				continue
+			}
+			time.Sleep(43200 * time.Second)
+		}
+	}()
+
+	// Scheduler: jalankan sinkronisasi setiap 60 detik
 	for {
 		// Print session validity before login
 		if adClient.IsSessionValid() {
@@ -282,6 +304,6 @@ func main() {
 		}
 		log.Printf("[INFO] Indexing Finished (Batch Parallel). Success: %d, Failed: %d", success, failed)
 
-		time.Sleep(43200 * time.Second)
+		time.Sleep(60 * time.Second)
 	}
 }
