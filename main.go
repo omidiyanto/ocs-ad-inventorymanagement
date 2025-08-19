@@ -106,7 +106,7 @@ func main() {
 		}
 	}()
 
-	// Scheduler: jalankan sinkronisasi setiap 90 detik
+	// Scheduler: jalankan sinkronisasi setiap 12 jam sekali
 	for {
 		// Print session validity before login
 		if adClient.IsSessionValid() {
@@ -282,6 +282,6 @@ func main() {
 		}
 		log.Printf("[INFO] Indexing Finished (Batch Parallel). Success: %d, Failed: %d", success, failed)
 
-		time.Sleep(90 * time.Second)
+		time.Sleep(43200 * time.Second)
 	}
 }
