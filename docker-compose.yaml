@@ -9,6 +9,19 @@ services:
     ports:
       - "8081:8081"
 
+  ocs-ad-elasticsearch-automation:
+    image: registry.satnusa.com/ocs-ad-elasticsearch-automation:latest
+    container_name: ocs-ad-elasticsearch-automation
+    restart: "no"
+    environment:
+      - ELASTICSEARCH_SERVER_URL=http://192.168.88.77:6200
+      - ELASTICSEARCH_USER=elastic
+      - ELASTICSEARCH_PASS=Sys4dm1n
+      - ELASTICSEARCH_INDEX_NAME=ocs-ad-inventory
+      - API_SERVER_URL=https://ocs.satnusa.com/ocsextra
+      - API_SERVER_USER=omi
+      - API_SERVER_PASS=Passw0rd!
+
 networks:
     ocs-itop-ad_network:
       external: true
