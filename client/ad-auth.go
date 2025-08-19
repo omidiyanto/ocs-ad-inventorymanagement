@@ -30,6 +30,20 @@ type Client struct {
 	config     Config
 }
 
+// IsSessionValid checks if the ADManager Plus session is still valid by checking the existence of the CSRF cookie.
+func (c *Client) IsSessionValid() bool {
+	parsedBaseURL, err := url.Parse(c.config.BaseURL)
+	if err != nil {
+		return false
+	}
+	for _, cookie := range c.httpClient.Jar.Cookies(parsedBaseURL) {
+		if cookie.Name == admpCSRFCookieName && cookie.Value != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // GetLatestGenerationID posts to generateReport and returns the latest generationId for the given reportId and params.
 func (c *Client) GetLatestGenerationID(reportId string, params string) (string, error) {
 	genURL := c.config.BaseURL + "/api/json/reports/report/generateReport"
@@ -68,70 +82,6 @@ func (c *Client) GetLatestGenerationID(reportId string, params string) (string, 
 		return fmt.Sprintf("%d", int(genId)), nil
 	}
 	return "", fmt.Errorf("generationId tidak ditemukan di response")
-}
-
-// GetLatestReportIDAndGenerationID fetches the latest REPORT_ID and GENERATION_ID for the 'All Computers' report.
-func (c *Client) GetLatestReportIDAndGenerationID(reportName string) (string, string, error) {
-	// Step 1: Fetch all reports
-	reportsURL := c.config.BaseURL + "/api/json/reports/report/getAllReports"
-	req, _ := http.NewRequest("GET", reportsURL, nil)
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return "", "", fmt.Errorf("gagal mengambil daftar report: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("gagal mengambil daftar report, status: %d", resp.StatusCode)
-	}
-	body, _ := io.ReadAll(resp.Body)
-	var reportsResp map[string]interface{}
-	if err := json.Unmarshal(body, &reportsResp); err != nil {
-		return "", "", fmt.Errorf("gagal parsing daftar report: %v", err)
-	}
-	// Find reportId for reportName
-	var reportId string
-	if reports, ok := reportsResp["reports"].([]interface{}); ok {
-		for _, r := range reports {
-			if report, ok := r.(map[string]interface{}); ok {
-				if name, ok := report["reportName"].(string); ok && strings.EqualFold(name, reportName) {
-					if id, ok := report["reportId"].(float64); ok {
-						reportId = fmt.Sprintf("%d", int(id))
-						break
-					}
-				}
-			}
-		}
-	}
-	if reportId == "" {
-		return "", "", fmt.Errorf("report dengan nama '%s' tidak ditemukan", reportName)
-	}
-	// Step 2: Fetch latest generationId for the report
-	genURL := c.config.BaseURL + "/api/json/reports/report/getReportGenerationIds?reportId=" + reportId
-	req, _ = http.NewRequest("GET", genURL, nil)
-	resp, err = c.httpClient.Do(req)
-	if err != nil {
-		return "", "", fmt.Errorf("gagal mengambil generationId: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("gagal mengambil generationId, status: %d", resp.StatusCode)
-	}
-	body, _ = io.ReadAll(resp.Body)
-	var genResp map[string]interface{}
-	if err := json.Unmarshal(body, &genResp); err != nil {
-		return "", "", fmt.Errorf("gagal parsing generationId: %v", err)
-	}
-	var generationId string
-	if gens, ok := genResp["generationIds"].([]interface{}); ok && len(gens) > 0 {
-		// Use the latest (last) generationId
-		if gen, ok := gens[len(gens)-1].(float64); ok {
-			generationId = fmt.Sprintf("%d", int(gen))
-		}
-	}
-	if generationId == "" {
-		return "", "", fmt.Errorf("generationId untuk reportId '%s' tidak ditemukan", reportId)
-	}
-	return reportId, generationId, nil
 }
 
 // New membuat instance baru dari Client.
@@ -192,6 +142,7 @@ func (c *Client) FetchComputerReport() ([]byte, error) {
 	// Params sesuai contoh, bisa diubah/dibuat dinamis jika perlu
 	params := `{"selectedDomains":["satnusa.com"],"domainVsOUList":{"DC=satnusa,DC=com":[]},"domainVsExcludeOUList":{"DC=satnusa,DC=com":[]},"domainVsExcludeChildOU":{"DC=satnusa,DC=com":false}}`
 	generationId, err := c.GetLatestGenerationID(reportId, params)
+	log.Println("[INFO] AD Manager Plus - Using Generation ID:", generationId)
 	if err != nil {
 		return nil, fmt.Errorf("gagal mendapatkan generationId: %v", err)
 	}

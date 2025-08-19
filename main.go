@@ -58,21 +58,6 @@ func main() {
 		log.Fatalf("Proses login gagal: %v", err)
 	}
 
-	// 4. Ambil laporan
-	rawData, err := adClient.FetchComputerReport()
-	if err != nil {
-		log.Fatalf("Proses pengambilan laporan gagal: %v", err)
-	}
-
-	// 5. Ubah data
-	cleanData, err := parser.ParseComputerReport(rawData)
-	if err != nil {
-		log.Fatalf("Proses transformasi data gagal: %v", err)
-	}
-
-	// 6. Log hasil akhir
-	log.Printf("[SUCCESS] AD Manager Plus - Data successfully parsed, Total: %d", len(cleanData))
-
 	// Jalankan web API Gin untuk delete-computer secara async
 	ocsCfg := client.LoadOCSConfig()
 	ocsClient, err := client.NewOCSMySQLClient(ocsCfg)
@@ -123,7 +108,33 @@ func main() {
 
 	// Scheduler: jalankan sinkronisasi setiap 90 detik
 	for {
-		// 1. List komputer OCS
+		// Print session validity before login
+		if adClient.IsSessionValid() {
+			log.Println("[INFO] ADManager Plus - Session is still valid.")
+		} else {
+			log.Println("[INFO] ADManager Plus - Session expired. Renewing session...")
+			if err := adClient.Login(); err != nil {
+				log.Fatalf("Proses login AD Manager Plus gagal: %v", err)
+			}
+			if adClient.IsSessionValid() {
+				log.Println("[INFO] ADManager Plus - Session renewed and valid.")
+			} else {
+				log.Println("[ERROR] ADManager Plus - Session renewal failed.")
+			}
+		}
+		rawData, err := adClient.FetchComputerReport()
+		if err != nil {
+			log.Fatalf("Proses pengambilan laporan AD gagal: %v", err)
+		}
+
+		// Parse data AD terbaru
+		cleanData, err := parser.ParseComputerReport(rawData)
+		if err != nil {
+			log.Fatalf("Proses transformasi data AD gagal: %v", err)
+		}
+		log.Printf("[SUCCESS] AD Manager Plus - Data successfully parsed, Total: %d", len(cleanData))
+
+		// List komputer OCS
 		ocsComputers, err := parser.ListOCSComputers(ocsClient.DB, 0)
 		if err != nil {
 			log.Printf("[ERROR] Gagal mengambil data komputer OCS: %v", err)
@@ -131,11 +142,11 @@ func main() {
 		}
 		log.Printf("[SUCCESS] OCS - Data successfully parsed, Total: %d", len(ocsComputers))
 
-		// 2. Gabungkan data OCS dan AD
+		// Gabungkan data OCS dan AD
 		finalList := parser.CombineOCSAndAD(ocsComputers, cleanData)
 		log.Printf("[SUCCESS] OCS x AD - Combined Data, Total: %d", len(finalList))
 
-		// 3. Simpan ke Elasticsearch
+		// Simpan ke Elasticsearch
 		esCfg := client.LoadElasticsearchConfig()
 		esClient, err := client.NewElasticsearchClient(esCfg)
 		if err != nil {
