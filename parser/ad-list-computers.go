@@ -41,7 +41,7 @@ func parseGeneralizedTime(gt string) string {
 	if err != nil {
 		return ""
 	}
-	tInWIB := t.Add(0 * time.Hour)
+	tInWIB := t.Add(7 * time.Hour)
 	return tInWIB.Format("2006-01-02 15:04:05")
 }
 
