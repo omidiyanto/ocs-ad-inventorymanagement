@@ -46,7 +46,6 @@ func NewLDAPClient(cfg LDAPConfig) (*LDAPClient, error) {
 		return nil, fmt.Errorf("gagal koneksi ke server LDAP: %v", err)
 	}
 
-	// Lakukan Bind (autentikasi)
 	err = conn.Bind(cfg.BindDN, cfg.BindPass)
 	if err != nil {
 		conn.Close()
@@ -61,8 +60,9 @@ func (c *LDAPClient) ListComputers() ([]*ldap.Entry, error) {
 	searchRequest := ldap.NewSearchRequest(
 		c.Config.SearchBase,
 		ldap.ScopeWholeSubtree, ldap.NeverDerefAliases, 0, 0, false,
-		"(objectClass=computer)", // Filter untuk mendapatkan hanya objek komputer
-		[]string{"name", "lastLogonTimestamp", "whenChanged", "userAccountControl"}, // Atribut yang dibutuhkan
+		"(objectClass=computer)",
+		// TAMBAHKAN atribut operatingSystem dan operatingSystemVersion
+		[]string{"name", "operatingSystem", "operatingSystemVersion", "lastLogon", "lastLogonTimestamp", "whenChanged", "userAccountControl"},
 		nil,
 	)
 
@@ -81,7 +81,6 @@ func (c *LDAPClient) Close() {
 	}
 }
 
-// Helper Atoi, karena strconv tidak di-import di file lain
 func Atoi(s string) (int, error) {
 	var i int
 	_, err := fmt.Sscan(s, &i)

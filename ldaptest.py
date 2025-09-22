@@ -1,11 +1,11 @@
 from ldap3 import Server, Connection, ALL
 from datetime import datetime, timedelta
 
-LDAP_SERVER = "192.168.88.110"
+LDAP_SERVER = "192.168.0.1"
 LDAP_PORT = 389
-LDAP_USER = "SATNUSA\\ldaptest"   # bisa juga ldaptest@satnusa.com
-LDAP_PASSWORD = "Passw0rd#51256s@!"
-BASE_DN = "DC=satnusa,DC=com"
+LDAP_USER = "COMPANY\\USERNAME"   
+LDAP_PASSWORD = "PASS"
+BASE_DN = "DC=example,DC=com"
 
 # Konversi lastLogonTimestamp dari Windows filetime ke Python datetime
 def filetime_to_dt(filetime):
