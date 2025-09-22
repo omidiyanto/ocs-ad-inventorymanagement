@@ -1,29 +1,15 @@
-// parser/ad-list-computers.go
 package parser
 
 import (
-	"encoding/json"
-	"fmt"
+	"strconv"
 	"strings"
+	"time"
+
+	"github.com/go-ldap/ldap/v3"
 )
 
-// RawReportColumn mendefinisikan struktur satu kolom dalam data mentah.
-type RawReportColumn struct {
-	Value    string `json:"VALUE"`
-	AttribID int    `json:"ATTRIB_ID"`
-}
-
-// RawReportRow mendefinisikan struktur satu baris dalam data mentah.
-type RawReportRow struct {
-	Columns []RawReportColumn `json:"COLUMNS"`
-}
-
-// RawReportData adalah struktur tingkat atas dari JSON mentah.
-type RawReportData struct {
-	ResultRows []RawReportRow `json:"resultrows"`
-}
-
 // ComputerReportRow adalah struktur untuk hasil akhir yang kita inginkan.
+// Stuktur ini tetap sama agar kompatibel dengan fungsi Combine.
 type ComputerReportRow struct {
 	ComputerName     string `json:"computer_name"`
 	LastLogonTime    string `json:"last_logon_time"`
@@ -31,86 +17,68 @@ type ComputerReportRow struct {
 	LastModifiedTime string `json:"ad_last_modified_time"`
 }
 
-// ParseComputerReport mengubah data mentah menjadi format sederhana.
-func ParseComputerReport(rawData []byte) ([]ComputerReportRow, error) {
-	// fmt.Println("\n[DEBUG] RAW JSON FROM AD:")
-	// fmt.Println(string(rawData))
+// convertLDAPTimestamp mengonversi Windows NT FileTime (dalam bentuk string) ke format "YYYY-MM-DD HH:MM:SS" dalam zona waktu UTC+7.
+func convertLDAPTimestamp(ts string) string {
+	if ts == "" || ts == "0" {
+		return "0"
+	}
+	i, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return ""
+	}
+
+	unixTimestamp := (i / 10000000) - 11644473600
+	t := time.Unix(unixTimestamp, 0).UTC()
+
+	// Tambahkan 7 jam untuk konversi ke UTC+7 (WIB)
+	tInWIB := t.Add(7 * time.Hour)
+
+	return tInWIB.Format("2006-01-02 15:04:05")
+}
+
+// parseGeneralizedTime mengonversi format waktu LDAP "generalized" ke format yang kita inginkan dalam zona waktu UTC+7.
+func parseGeneralizedTime(gt string) string {
+	if gt == "" {
+		return ""
+	}
+	// Format LDAP: 20230922083015.0Z
+	t, err := time.Parse("20060102150405.0Z", gt)
+	if err != nil {
+		return ""
+	}
+
+	// Tambahkan 7 jam untuk konversi ke UTC+7 (WIB)
+	tInWIB := t.Add(7 * time.Hour)
+
+	return tInWIB.Format("2006-01-02 15:04:05")
+}
+
+// ParseComputerReportFromLDAP mengubah data mentah LDAP menjadi format sederhana.
+func ParseComputerReportFromLDAP(entries []*ldap.Entry) ([]ComputerReportRow, error) {
 	var simplifiedList []ComputerReportRow
+	const ufAccountDisable = 2
 
-	idToKeyMap := map[int]string{
-		3001: "computer_name",
-		3019: "last_logon_time",
-		3021: "computer_status",
-		3012: "ad_last_modified_time",
-	}
-
-	// Try to unmarshal as the usual format first
-	var parsedData RawReportData
-	err := json.Unmarshal(rawData, &parsedData)
-	if err == nil && len(parsedData.ResultRows) > 0 {
-		for _, row := range parsedData.ResultRows {
-			item := make(map[string]string)
-			for _, col := range row.Columns {
-				if key, ok := idToKeyMap[col.AttribID]; ok {
-					item[key] = col.Value
-				}
-			}
-			if name, ok := item["computer_name"]; ok {
-				logon := item["last_logon_time"]
-				status := item["computer_status"]
-				modified := item["ad_last_modified_time"]
-				simplifiedList = append(simplifiedList, ComputerReportRow{
-					ComputerName:     name,
-					LastLogonTime:    logon,
-					ComputerStatus:   strings.ToLower(status),
-					LastModifiedTime: modified,
-				})
-			}
+	for _, entry := range entries {
+		name := entry.GetAttributeValue("name")
+		if name == "" {
+			continue // Skip entri tanpa nama
 		}
-		return simplifiedList, nil
+
+		uacStr := entry.GetAttributeValue("userAccountControl")
+		uac, _ := strconv.Atoi(uacStr)
+		status := "enabled"
+		// Cek flag ACCOUNTDISABLE
+		if (uac & ufAccountDisable) == ufAccountDisable {
+			status = "disabled"
+		}
+
+		simplifiedList = append(simplifiedList, ComputerReportRow{
+			ComputerName:     name,
+			LastLogonTime:    convertLDAPTimestamp(entry.GetAttributeValue("lastLogonTimestamp")),
+			ComputerStatus:   strings.ToLower(status),
+			LastModifiedTime: parseGeneralizedTime(entry.GetAttributeValue("whenChanged")),
+		})
 	}
 
-	// If not, try to parse as array of objects keyed by ATTRIB_ID
-	// The root may be an object with "resultrows" as []map[string]interface{}
-	var generic map[string]interface{}
-	if err := json.Unmarshal(rawData, &generic); err != nil {
-		return nil, fmt.Errorf("gagal mem-parsing JSON mentah: %v", err)
-	}
-	rows, ok := generic["resultrows"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("format resultrows tidak dikenali")
-	}
-	for _, r := range rows {
-		item := make(map[string]string)
-		// r bisa berupa map[string]interface{} dengan key ATTRIB_ID
-		if rowMap, ok := r.(map[string]interface{}); ok {
-			for k, v := range rowMap {
-				// k is always string, representing ATTRIB_ID
-				var id int
-				fmt.Sscanf(k, "%d", &id)
-				if key, ok := idToKeyMap[id]; ok {
-					switch val := v.(type) {
-					case string:
-						item[key] = val
-					case float64:
-						item[key] = fmt.Sprintf("%v", val)
-					case int:
-						item[key] = fmt.Sprintf("%v", val)
-					}
-				}
-			}
-			if name, ok := item["computer_name"]; ok {
-				logon := item["last_logon_time"]
-				status := item["computer_status"]
-				modified := item["ad_last_modified_time"]
-				simplifiedList = append(simplifiedList, ComputerReportRow{
-					ComputerName:     name,
-					LastLogonTime:    logon,
-					ComputerStatus:   strings.ToLower(status),
-					LastModifiedTime: modified,
-				})
-			}
-		}
-	}
 	return simplifiedList, nil
 }

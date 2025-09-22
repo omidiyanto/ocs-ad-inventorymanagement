@@ -1,4 +1,3 @@
-// main.go
 package main
 
 import (
@@ -18,56 +17,31 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// loadConfig memuat konfigurasi dari variabel lingkungan.
-func loadConfig() (client.Config, error) {
+func main() {
 	// Memuat file .env, tidak akan error jika file tidak ada
 	godotenv.Load()
 
-	cfg := client.Config{}
-	requiredVars := map[string]*string{
-		"AD_BASE_URL":           &cfg.BaseURL,
-		"AD_USERNAME":           &cfg.Username,
-		"AD_ENCRYPTED_PASSWORD": &cfg.EncryptedPassword,
-	}
-
-	for key, valuePtr := range requiredVars {
-		value := os.Getenv(key)
-		if value == "" {
-			return cfg, fmt.Errorf("variabel lingkungan wajib '%s' tidak diatur", key)
-		}
-		*valuePtr = value
-	}
-	return cfg, nil
-}
-
-func main() {
-	// 1. Muat konfigurasi dari .env
-	cfg, err := loadConfig()
+	// 1. Muat konfigurasi LDAP dan konek
+	ldapCfg := client.LoadLDAPConfig()
+	ldapClient, err := client.NewLDAPClient(ldapCfg)
 	if err != nil {
-		log.Fatalf("Gagal memuat konfigurasi: %v", err)
+		log.Fatalf("[FATAL] Gagal koneksi ke LDAP: %v", err)
 	}
+	defer ldapClient.Close()
+	log.Println("[SUCCESS] LDAP - Berhasil konek dan autentikasi ke Active Directory.")
 
-	// 2. Buat client baru dengan konfigurasi yang sudah dimuat
-	adClient, err := client.New(cfg)
-	if err != nil {
-		log.Fatalf("Gagal membuat client: %v", err)
-	}
-
-	// 3. Jalankan login menggunakan method dari client
-	if err := adClient.Login(); err != nil {
-		log.Fatalf("Proses login gagal: %v", err)
-	}
-
-	// Jalankan web API Gin untuk delete-computer secara async
+	// 2. Koneksi ke OCS MySQL (tetap sama)
 	ocsCfg := client.LoadOCSConfig()
 	ocsClient, err := client.NewOCSMySQLClient(ocsCfg)
 	if err != nil {
-		log.Fatalf("[ERROR] OCS - Koneksi gagal: %v", err)
+		log.Fatalf("[FATAL] OCS - Koneksi gagal: %v", err)
 	}
 	if err := ocsClient.Ping(); err != nil {
-		log.Fatalf("[ERROR] OCS - Autentikasi gagal: %v", err)
+		log.Fatalf("[FATAL] OCS - Ping database gagal: %v", err)
 	}
+	log.Println("[SUCCESS] OCS - Berhasil konek ke database.")
 
+	// 3. Jalankan Web API (tetap sama)
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 
@@ -75,11 +49,9 @@ func main() {
 	if basePath == "" {
 		basePath = "/ocsextra"
 	}
-	// Pastikan basePath diawali dengan /
 	if !strings.HasPrefix(basePath, "/") {
 		basePath = "/" + basePath
 	}
-	// Pastikan basePath tidak diakhiri / (kecuali root)
 	if len(basePath) > 1 && strings.HasSuffix(basePath, "/") {
 		basePath = strings.TrimRight(basePath, "/")
 	}
@@ -88,87 +60,61 @@ func main() {
 	apiGroup.POST("/auth-token", api.AuthTokenHandler)
 	apiGroup.POST("/delete-computer", api.DeleteComputerHandler(ocsClient.DB))
 
-	// Frontend GET
 	r.GET(basePath+"/delete-computer", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
 		c.String(200, web.FrontendHTML)
 	})
 
-	// Ambil port dari env, default 8080
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 	addr := ":" + port
 	go func() {
+		log.Printf("[INFO] Web server berjalan di alamat %s%s", addr, basePath)
 		if err := r.Run(addr); err != nil {
-			log.Fatalf("[ERROR] Gagal menjalankan web API: %v", err)
+			log.Fatalf("[FATAL] Gagal menjalankan web API: %v", err)
 		}
 	}()
 
-	// Refresher: perbarui generationId setiap 12 jam sekali
-	go func() {
-		reportId := "210"
-		params := `{"selectedDomains":["satnusa.com"],"domainVsOUList":{"DC=satnusa,DC=com":[]},"domainVsExcludeOUList":{"DC=satnusa,DC=com":[]},"domainVsExcludeChildOU":{"DC=satnusa,DC=com":false}}`
-		for {
-			if !adClient.IsSessionValid() {
-				log.Println("[INFO] ADManager Plus - Session expired. Renewing session for GenerationID refresh...")
-				if err := adClient.Login(); err != nil {
-					log.Printf("[ERROR] ADManager Plus - Login failed during GenerationID refresh: %v", err)
-					time.Sleep(60 * time.Second)
-					continue
-				}
-			}
-			if err := adClient.RefreshGenerationID(reportId, params); err != nil {
-				log.Printf("[ERROR] Gagal refresh generationId: %v", err)
-				time.Sleep(300 * time.Second)
-				continue
-			}
-			time.Sleep(43200 * time.Second)
-		}
-	}()
-
-	// Scheduler: jalankan sinkronisasi setiap 60 detik
+	// 4. Scheduler utama untuk sinkronisasi data
 	for {
-		// Print session validity before login
-		if adClient.IsSessionValid() {
-			log.Println("[INFO] ADManager Plus - Session is still valid.")
-		} else {
-			log.Println("[INFO] ADManager Plus - Session expired. Renewing session...")
-			if err := adClient.Login(); err != nil {
-				log.Fatalf("Proses login AD Manager Plus gagal: %v", err)
-			}
-			if adClient.IsSessionValid() {
-				log.Println("[INFO] ADManager Plus - Session renewed and valid.")
-			} else {
-				log.Println("[ERROR] ADManager Plus - Session renewal failed.")
-			}
-		}
-		rawData, err := adClient.FetchComputerReport()
+		// --- Ambil data dari AD via LDAP ---
+		ldapEntries, err := ldapClient.ListComputers()
 		if err != nil {
-			log.Fatalf("Proses pengambilan laporan AD gagal: %v", err)
+			// Jika error, coba re-koneksi sekali sebelum gagal
+			log.Printf("[ERROR] Gagal mengambil data dari LDAP: %v. Mencoba re-koneksi...", err)
+			ldapClient.Close()
+			ldapClient, err = client.NewLDAPClient(ldapCfg)
+			if err != nil {
+				log.Fatalf("[FATAL] Gagal re-koneksi ke LDAP: %v", err)
+			}
+			ldapEntries, err = ldapClient.ListComputers()
+			if err != nil {
+				log.Fatalf("[FATAL] Gagal mengambil data dari LDAP setelah re-koneksi: %v", err)
+			}
 		}
 
-		// Parse data AD terbaru
-		cleanData, err := parser.ParseComputerReport(rawData)
+		// --- Parse data AD ---
+		cleanData, err := parser.ParseComputerReportFromLDAP(ldapEntries)
 		if err != nil {
 			log.Fatalf("Proses transformasi data AD gagal: %v", err)
 		}
-		log.Printf("[SUCCESS] AD Manager Plus - Data successfully parsed, Total: %d", len(cleanData))
+		log.Printf("[SUCCESS] LDAP - Data berhasil diparsing, Total: %d", len(cleanData))
 
-		// List komputer OCS
+		// --- Ambil data dari OCS ---
 		ocsComputers, err := parser.ListOCSComputers(ocsClient.DB, 0)
 		if err != nil {
 			log.Printf("[ERROR] Gagal mengambil data komputer OCS: %v", err)
 			continue
 		}
-		log.Printf("[SUCCESS] OCS - Data successfully parsed, Total: %d", len(ocsComputers))
+		log.Printf("[SUCCESS] OCS - Data berhasil diparsing, Total: %d", len(ocsComputers))
 
-		// Gabungkan data OCS dan AD
+		// --- Gabungkan data OCS dan AD ---
 		finalList := parser.CombineOCSAndAD(ocsComputers, cleanData)
-		log.Printf("[SUCCESS] OCS x AD - Combined Data, Total: %d", len(finalList))
+		log.Printf("[SUCCESS] OCS x AD - Data digabungkan, Total: %d", len(finalList))
 
-		// Simpan ke Elasticsearch
+		// --- Simpan ke Elasticsearch ---
 		esCfg := client.LoadElasticsearchConfig()
 		esClient, err := client.NewElasticsearchClient(esCfg)
 		if err != nil {
@@ -176,7 +122,7 @@ func main() {
 			continue
 		}
 
-		// --- Sinkronisasi dua arah: hapus data yang sudah tidak ada di OCS/AD ---
+		// --- Sinkronisasi: hapus data yang sudah tidak ada di OCS/AD ---
 		cacheOCS := make(map[string]struct{})
 		cacheAD := make(map[string]struct{})
 		hashName := func(name string) string {
@@ -245,9 +191,9 @@ func main() {
 				res.Body.Close()
 			}
 		}
-		log.Printf("[INFO] OCS x AD - Remove Deleted Data, Total: %d", deleted)
+		log.Printf("[INFO] Elasticsearch - Hapus data lama, Total: %d", deleted)
 
-		// --- Index/update data yang masih ada, gunakan batch dan paralel (goroutine) ---
+		// --- Index/update data yang masih ada ---
 		batchSize := 500
 		maxParallel := 4
 		type indexResult struct {
@@ -302,8 +248,9 @@ func main() {
 			success += res.success
 			failed += res.failed
 		}
-		log.Printf("[INFO] Indexing Finished (Batch Parallel). Success: %d, Failed: %d", success, failed)
+		log.Printf("[INFO] Elasticsearch - Indexing selesai. Sukses: %d, Gagal: %d", success, failed)
 
+		log.Println("----------------- Siklus Selesai, Menunggu 60 Detik -----------------")
 		time.Sleep(60 * time.Second)
 	}
 }
