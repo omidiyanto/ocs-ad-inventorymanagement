@@ -78,9 +78,53 @@ func (c *Client) GetLatestGenerationID(reportId string, params string) (string, 
 	body, _ := io.ReadAll(resp.Body)
 	// Logging isi response untuk debug
 	fmt.Printf("[DEBUG] Response generateReport: %s\n", string(body))
-	// Validasi jika response bukan JSON
-	if strings.Contains(string(body), "<") {
-		return "", fmt.Errorf("response generateReport bukan JSON, kemungkinan error dari server: %s", string(body))
+	// Validasi jika response adalah halaman login (HTML)
+	if strings.Contains(string(body), "<title>ManageEngine - ADManager Plus</title>") || strings.Contains(string(body), "<form name=\"login\"") {
+		fmt.Println("[WARN] Session expired atau belum login. Melakukan re-login...")
+		if err := c.Login(); err != nil {
+			return "", fmt.Errorf("gagal re-login sebelum generateReport: %v", err)
+		}
+		// Ulangi request setelah login ulang
+		// Rebuild CSRF token
+		parsedBaseURL, _ := url.Parse(c.config.BaseURL)
+		var csrfToken string
+		for _, cookie := range c.httpClient.Jar.Cookies(parsedBaseURL) {
+			if cookie.Name == admpCSRFCookieName {
+				csrfToken = cookie.Value
+				break
+			}
+		}
+		if csrfToken == "" {
+			return "", fmt.Errorf("tidak dapat menemukan cookie '%s' setelah re-login", admpCSRFCookieName)
+		}
+		payload := url.Values{}
+		payload.Set("reportId", reportId)
+		payload.Set("params", params)
+		payload.Set("admpcsrf", csrfToken)
+		req, _ := http.NewRequest("POST", genURL, strings.NewReader(payload.Encode()))
+		req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		resp2, err := c.httpClient.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("gagal POST generateReport setelah re-login: %v", err)
+		}
+		defer resp2.Body.Close()
+		if resp2.StatusCode != http.StatusOK {
+			body2, _ := io.ReadAll(resp2.Body)
+			return "", fmt.Errorf("gagal generateReport setelah re-login, status: %d, body: %s", resp2.StatusCode, string(body2))
+		}
+		body2, _ := io.ReadAll(resp2.Body)
+		fmt.Printf("[DEBUG] Response generateReport (setelah re-login): %s\n", string(body2))
+		if strings.Contains(string(body2), "<") {
+			return "", fmt.Errorf("response generateReport masih bukan JSON setelah re-login: %s", string(body2))
+		}
+		var genResp map[string]interface{}
+		if err := json.Unmarshal(body2, &genResp); err != nil {
+			return "", fmt.Errorf("gagal parsing response generateReport setelah re-login: %v. Body: %s", err, string(body2))
+		}
+		if genId, ok := genResp["generationId"].(float64); ok {
+			return fmt.Sprintf("%d", int(genId)), nil
+		}
+		return "", fmt.Errorf("generationId tidak ditemukan di response setelah re-login. Body: %s", string(body2))
 	}
 	var genResp map[string]interface{}
 	if err := json.Unmarshal(body, &genResp); err != nil {
