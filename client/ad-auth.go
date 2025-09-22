@@ -76,14 +76,20 @@ func (c *Client) GetLatestGenerationID(reportId string, params string) (string, 
 		return "", fmt.Errorf("gagal generateReport, status: %d, body: %s", resp.StatusCode, string(body))
 	}
 	body, _ := io.ReadAll(resp.Body)
+	// Logging isi response untuk debug
+	fmt.Printf("[DEBUG] Response generateReport: %s\n", string(body))
+	// Validasi jika response bukan JSON
+	if strings.Contains(string(body), "<") {
+		return "", fmt.Errorf("response generateReport bukan JSON, kemungkinan error dari server: %s", string(body))
+	}
 	var genResp map[string]interface{}
 	if err := json.Unmarshal(body, &genResp); err != nil {
-		return "", fmt.Errorf("gagal parsing response generateReport: %v", err)
+		return "", fmt.Errorf("gagal parsing response generateReport: %v. Body: %s", err, string(body))
 	}
 	if genId, ok := genResp["generationId"].(float64); ok {
 		return fmt.Sprintf("%d", int(genId)), nil
 	}
-	return "", fmt.Errorf("generationId tidak ditemukan di response")
+	return "", fmt.Errorf("generationId tidak ditemukan di response. Body: %s", string(body))
 }
 
 // SetGenerationID menyimpan generationId terbaru secara thread-safe.
